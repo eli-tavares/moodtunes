@@ -54,7 +54,7 @@ h2 { margin: 0 0 12px; font-size: 1.1rem; }
     padding: 16px;
     margin-bottom: 16px;
 }
-.card[hidden] { display: none; }
+[hidden] { display: none !important; }
 
 label { display: block; font-weight: 600; margin-bottom: 8px; }
 
@@ -119,3 +119,16 @@ textarea:focus-visible, input:focus-visible, .btn:focus-visible, .chip:focus-vis
 }
 
 a.btn { display: block; text-align: center; text-decoration: none; line-height: 22px; }
+
+.center { text-align: center; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.btn.small { padding: 8px 12px; white-space: nowrap; }
+
+.check {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 400; margin: 2px 0 16px;
+}
+.check input { width: 22px; height: 22px; margin: 0; padding: 0; flex: none; }
+
+.error-text { color: var(--danger); min-height: 1.4em; margin: 12px 0 0; text-align: center; }

@@ -1,5 +1,6 @@
 package com.tavares.recommender.config;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -86,5 +87,34 @@ class ApiGuardFilterTest {
                 .contentType(MediaType.APPLICATION_JSON).content(huge))
             .andExpect(status().isPayloadTooLarge());
         Mockito.verifyNoInteractions(moodAnalysisService);
+    }
+
+    @Test
+    void authCheckNeedsTheRightTokenAndCallsNoAi() throws Exception {
+        mockMvc.perform(get("/api/auth/check").with(from("10.0.1.1")))
+            .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/check").header(ApiGuardFilter.TOKEN_HEADER, "wrong").with(from("10.0.1.2")))
+            .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/check").header(ApiGuardFilter.TOKEN_HEADER, "s3cret").with(from("10.0.1.3")))
+            .andExpect(status().isNoContent());
+        Mockito.verifyNoInteractions(moodAnalysisService, musicService);
+    }
+
+    @Test
+    void guessingTheAccessCodeIsThrottled() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(get("/api/auth/check").header(ApiGuardFilter.TOKEN_HEADER, "guess" + i)
+                    .with(from("10.0.2.1")))
+                .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(get("/api/auth/check").header(ApiGuardFilter.TOKEN_HEADER, "guess4").with(from("10.0.2.1")))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor from(String address) {
+        return req -> {
+            req.setRemoteAddr(address);
+            return req;
+        };
     }
 }

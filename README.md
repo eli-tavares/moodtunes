@@ -124,10 +124,24 @@ phone can reach over HTTPS (a cloud host, or your own machine exposed privately,
 1. Deploy it (see Docker above) and open the HTTPS URL in **Safari** on the iPhone.
 2. Tap **Share → Add to Home Screen**.
 3. Launch **MoodTunes** from the home screen - it opens full screen like a native app.
-4. If you set `APP_ACCESS_TOKEN`, enter it when prompted (once per device).
+4. If you set `APP_ACCESS_TOKEN`, the app opens on a **lock screen** and asks for it before showing anything else
+   (see "Lock screen" below).
 
 The app shell is cached by a service worker so it opens instantly and shows a friendly message when offline;
 recommendations always need a connection because they come from the AI.
+
+---
+
+## 🔒 Lock screen
+
+When `APP_ACCESS_TOKEN` is set, MoodTunes asks for the access code before showing the app. Tick
+**Keep me unlocked on this device** to stay signed in (the default), or untick it to be asked again each time the app
+is closed and reopened. The **Lock** button forgets the code and clears the page. If the code on the server changes, the
+app notices and asks again. On the iPhone, the field works with the Passwords app/Keychain autofill (not verified
+inside the home-screen app). With no `APP_ACCESS_TOKEN` (local use) there is no lock screen.
+
+The lock screen is a convenience on top of the real protection: the server rejects every `/api` call without the code
+(`401`), and wrong guesses are rate limited. The page itself (HTML/JS/CSS) contains no personal data.
 
 ---
 
@@ -138,6 +152,7 @@ Stateless JSON API (errors are [RFC 7807](https://datatracker.ietf.org/doc/html/
 - `POST /api/analyze` - `{ "moodText": "..." }` (max 500 chars) -> `{ "emotions": ["joy", ...] }`
 - `POST /api/recommend` - `{ "emotion": "joy", "mediaType": "SONGS|ALBUMS" }` ->
   `{ "items": [{ "title": "...", "artist": "...", "description": "..." }] }`
+- `GET /api/auth/check` - `204` if the access code is accepted (or none is required), `401` otherwise; makes no AI call
 - `GET /actuator/health` - liveness/readiness for hosting platforms
 
 Status codes: `400` invalid input, `401` missing/wrong access token, `413` body too large, `429` rate limited,

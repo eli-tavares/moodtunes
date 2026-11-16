@@ -8,6 +8,8 @@ import com.tavares.recommender.service.MoodAnalysisService;
 import com.tavares.recommender.service.MusicService;
 import com.tavares.recommender.service.MusicType;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +25,16 @@ public class ApiController {
     public ApiController(MoodAnalysisService moodService, MusicService musicService) {
         this.moodService = moodService;
         this.musicService = musicService;
+    }
+
+    /**
+     * Lets the UI verify the access code before showing the app. {@link com.tavares.recommender.config.ApiGuardFilter}
+     * has already rejected the request (401) if a token is required and wrong, so reaching this method means access
+     * is granted. No AI call is made.
+     */
+    @GetMapping("/auth/check")
+    public ResponseEntity<Void> checkAccess() {
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/analyze", consumes = "application/json", produces = "application/json")

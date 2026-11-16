@@ -131,6 +131,13 @@ class ApiControllerTest {
     }
 
     @Test
+    void authCheckIsOpenWhenNoAccessTokenIsConfigured() throws Exception {
+        mockMvc.perform(get("/api/auth/check"))
+            .andExpect(status().isNoContent())
+            .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
     void responsesCarrySecurityHeaders() throws Exception {
         mockMvc.perform(get("/api/does-not-exist"))
             .andExpect(header().string("X-Content-Type-Options", "nosniff"))

@@ -2,8 +2,20 @@
 
 const TOKEN_KEY = 'moodtunes.accessToken';
 const REQUEST_TIMEOUT_MS = 45000;
+const CHECK_TIMEOUT_MS = 10000;
+const WAKE_ATTEMPTS = 4;          // a sleeping host can answer 502 for a few seconds while it boots
+const WAKE_DELAY_MS = 2500;
 
 const $ = (id) => document.getElementById(id);
+const bootEl = $('boot');
+const lockCard = $('lock');
+const lockForm = $('lockForm');
+const tokenInput = $('tokenInput');
+const rememberChk = $('rememberChk');
+const unlockBtn = $('unlockBtn');
+const lockStatus = $('lockStatus');
+const lockBtn = $('lockBtn');
+const appContent = $('appContent');
 const moodText = $('moodText');
 const analyzeBtn = $('analyzeBtn');
 const emotionsCard = $('emotionsCard');
@@ -14,21 +26,145 @@ const songsBtn = $('songsBtn');
 const albumsBtn = $('albumsBtn');
 const resultsCard = $('resultsCard');
 const resultsList = $('resultsList');
-const tokenCard = $('tokenCard');
-const tokenInput = $('tokenInput');
 const statusEl = $('status');
 
 let selectedEmotion = null;
-let pendingRetry = null; // action to re-run after the user enters an access code
+let memoryToken = '';   // fallback when browser storage is unavailable (private mode, blocked storage)
 
-// localStorage can throw (private mode, blocked storage) - the app must work without it.
+// ---- access code storage ---------------------------------------------------------------------------------
+// localStorage = "keep me unlocked on this device"; sessionStorage = until the app is closed.
 function readToken() {
-    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+    if (memoryToken) return memoryToken;
+    try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 }
-function saveToken(value) {
-    try { localStorage.setItem(TOKEN_KEY, value); } catch { /* ignore */ }
+function clearToken() {
+    memoryToken = '';
+    try { localStorage.removeItem(TOKEN_KEY); sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+}
+function saveToken(value, remember) {
+    clearToken();
+    memoryToken = value;
+    try { (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, value); } catch { /* memory only */ }
 }
 
+// ---- views -----------------------------------------------------------------------------------------------
+function showView(view) {
+    bootEl.hidden = view !== 'boot';
+    lockCard.hidden = view !== 'lock';
+    appContent.hidden = view !== 'app';
+}
+
+function resetApp() {
+    moodText.value = '';
+    emotionsContainer.replaceChildren();
+    resultsList.replaceChildren();
+    emotionsCard.hidden = true;
+    mediaCard.hidden = true;
+    resultsCard.hidden = true;
+    selectedEmotion = null;
+    setStatus('');
+}
+
+function showLock(message = '') {
+    resetApp();                       // nothing from a previous session stays in the page while locked
+    tokenInput.value = '';
+    lockStatus.textContent = message;
+    showView('lock');
+    tokenInput.focus();
+}
+
+function showApp() {
+    lockStatus.textContent = '';
+    showView('app');
+}
+
+// ---- access check ----------------------------------------------------------------------------------------
+// -> 'ok' | 'denied' | 'throttled' | 'offline' | 'error'
+async function checkAccess(token) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+    try {
+        const resp = await fetch('/api/auth/check', {
+            headers: token ? { 'X-Access-Token': token } : {},
+            cache: 'no-store',
+            signal: controller.signal,
+        });
+        if (resp.ok) return 'ok';
+        if (resp.status === 401) return 'denied';
+        if (resp.status === 429) return 'throttled';
+        return 'error';
+    } catch {
+        return 'offline';
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Retries 5xx answers (a sleeping/booting host), so this first call also wakes the server for the real ones.
+async function checkAccessWithWake(token, onWaiting) {
+    let result = 'error';
+    for (let attempt = 0; attempt < WAKE_ATTEMPTS; attempt++) {
+        result = await checkAccess(token);
+        if (result !== 'error') return result;
+        if (attempt < WAKE_ATTEMPTS - 1) {
+            onWaiting('Waking up the server…');
+            await new Promise((r) => setTimeout(r, WAKE_DELAY_MS));
+        }
+    }
+    return result;
+}
+
+const LOCK_MESSAGES = {
+    denied: 'That access code was not accepted.',
+    throttled: 'Too many attempts. Wait a minute and try again.',
+    offline: "You're offline. Connect to the internet to unlock.",
+    error: 'The server is having a problem. Please try again in a moment.',
+};
+
+async function start() {
+    showView('boot');
+    const token = readToken();
+    const result = await checkAccessWithWake(token, (msg) => { bootEl.textContent = msg; });
+    bootEl.textContent = 'Opening…';
+
+    if (result === 'ok') return showApp();
+    if (result === 'denied') {
+        clearToken();
+        return showLock(token ? 'Your access code is no longer accepted. Please enter it again.' : '');
+    }
+    if (result === 'offline' && token) {   // can't verify, but nothing is shown that needs the server
+        showApp();
+        return setStatus("You're offline. Reconnect to get recommendations.", true);
+    }
+    return showLock(LOCK_MESSAGES[result]);
+}
+
+lockForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const value = tokenInput.value.trim();
+    if (!value) return;
+    unlockBtn.disabled = true;
+    lockStatus.textContent = 'Checking…';
+    const result = await checkAccessWithWake(value, (msg) => { lockStatus.textContent = msg; });
+    unlockBtn.disabled = false;
+    if (result === 'ok') {
+        saveToken(value, rememberChk.checked);
+        tokenInput.value = '';
+        return showApp();
+    }
+    lockStatus.textContent = LOCK_MESSAGES[result];
+    if (result === 'denied') {
+        tokenInput.value = '';
+        tokenInput.focus();
+    }
+});
+
+lockBtn.addEventListener('click', () => {
+    clearToken();
+    showLock('');
+});
+
+// ---- the app itself --------------------------------------------------------------------------------------
 function setStatus(message, isError = false) {
     statusEl.textContent = message;
     statusEl.classList.toggle('error', isError);
@@ -79,19 +215,16 @@ async function api(path, payload) {
     }
 }
 
-// Runs an API action with busy/status handling and the access-code prompt on 401.
+// Runs an API action with busy/status handling; a rejected access code sends you back to the lock screen.
 async function run(action, busyMessage) {
     setBusy(true);
     setStatus(busyMessage);
     try {
         await action();
-        tokenCard.hidden = true;
     } catch (e) {
         if (e.status === 401) {
-            pendingRetry = () => run(action, busyMessage);
-            tokenCard.hidden = false;
-            tokenInput.focus();
-            setStatus(readToken() ? 'That access code was not accepted.' : 'Please enter your access code.', true);
+            clearToken();
+            showLock('Your access code was rejected. Please enter it again.');
         } else {
             setStatus(e.message, true);
         }
@@ -189,18 +322,6 @@ function showResults(items) {
 analyzeBtn.addEventListener('click', analyze);
 songsBtn.addEventListener('click', () => chooseMedia('SONGS'));
 albumsBtn.addEventListener('click', () => chooseMedia('ALBUMS'));
-$('tokenSaveBtn').addEventListener('click', () => {
-    const value = tokenInput.value.trim();
-    if (!value) return;
-    saveToken(value);
-    tokenInput.value = '';
-    tokenCard.hidden = true;
-    if (pendingRetry) {
-        const retry = pendingRetry;
-        pendingRetry = null;
-        retry();
-    }
-});
 
 // Offline support / installability
 if ('serviceWorker' in navigator) {
@@ -208,3 +329,5 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('Service worker failed', e));
     });
 }
+
+start();
