@@ -93,6 +93,29 @@ To add another provider (Gemini, Mistral, Ollama, ...), add its `spring-ai-start
 
 ---
 
+## 🚂 Deploy on Railway
+
+Railway builds the `Dockerfile` straight from GitHub and redeploys on every push to `main`.
+
+1. Sign in at [railway.com](https://railway.com) with GitHub, then **New Project -> Deploy from GitHub repo** and pick
+   this repo (grant the Railway GitHub app access to just this repo).
+2. In the service's **Variables** tab add (never commit these):
+
+   | Variable | Value |
+   |----------|-------|
+   | `SPRING_PROFILES_ACTIVE` | `claude` |
+   | `ANTHROPIC_API_KEY` | your Anthropic API key |
+   | `APP_ACCESS_TOKEN` | a long random code, e.g. `openssl rand -base64 24` |
+
+3. **Settings -> Networking -> Generate Domain** to get your public `https://...up.railway.app` URL.
+4. **Settings -> Deploy -> Healthcheck Path:** `/actuator/health`.
+5. In Railway's billing settings set a **usage limit**, and in the Anthropic Console set a monthly spend limit.
+
+Railway injects `PORT`, which the app already honours. Expect roughly 300 MB of memory in use. Behind Railway's proxy
+all traffic may share one rate-limit bucket, which is fine for a single user; `APP_ACCESS_TOKEN` is your real protection.
+
+---
+
 ## 📱 Use it on your iPhone
 
 The app is a Progressive Web App. iOS requires **HTTPS** for installable web apps, so it has to be hosted somewhere your
