@@ -15,10 +15,13 @@ import com.tavares.recommender.dtos.MoodRequest;
 import com.tavares.recommender.dtos.MusicRecommendation;
 import com.tavares.recommender.dtos.MusicRecommendationRequest;
 import com.tavares.recommender.service.AiResponseException;
+import com.tavares.recommender.service.MoodAnalysis;
 import com.tavares.recommender.service.MoodAnalysisService;
 import com.tavares.recommender.service.MusicService;
+import com.tavares.recommender.user.UserService;
 import com.tavares.recommender.service.MusicType;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +31,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(ApiController.class)
+@WebMvcTest(value = ApiController.class, properties = "app.rate-limit.per-client-per-minute=1000")
 class ApiControllerTest {
 
     @Autowired
@@ -43,18 +46,48 @@ class ApiControllerTest {
     @MockitoBean
     private MusicService musicService;
 
+    @MockitoBean
+    private UserService users;
+
+    @BeforeEach
+    void musicIsOn() {
+        Mockito.when(users.musicEnabled(Mockito.anyLong())).thenReturn(true);
+    }
+
+    @Test
+    void recommendIsRefusedWithoutAnAiCallWhenMusicIsTurnedOff() throws Exception {
+        Mockito.when(users.musicEnabled(Mockito.anyLong())).thenReturn(false);
+
+        mockMvc.perform(post("/api/recommend").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emotions\":[\"happy\"],\"mediaType\":\"SONGS\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.detail").value(containsString("turned off")));
+        Mockito.verifyNoInteractions(musicService);
+    }
+
     @Test
     void analyzeReturnsEmotions() throws Exception {
         String moodText = "I feel sad and lonely.";
-        Mockito.when(moodAnalysisService.extractEmotions(moodText))
-            .thenReturn(List.of("sadness", "loneliness"));
+        Mockito.when(moodAnalysisService.analyze(moodText))
+            .thenReturn(new MoodAnalysis(List.of("sadness", "loneliness"), false));
 
         mockMvc.perform(post("/api/analyze")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(new MoodRequest(moodText))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.emotions[0]").value("sadness"))
-            .andExpect(jsonPath("$.emotions[1]").value("loneliness"));
+            .andExpect(jsonPath("$.emotions[1]").value("loneliness"))
+            .andExpect(jsonPath("$.flagged").value(false));
+    }
+
+    @Test
+    void analyzePassesTheSafetyFlagOn() throws Exception {
+        Mockito.when(moodAnalysisService.analyze("x")).thenReturn(new MoodAnalysis(List.of("sad"), true));
+
+        mockMvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content("{\"moodText\":\"x\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.flagged").value(true))
+            .andExpect(jsonPath("$.emotions[0]").value("sad"));
     }
 
     @Test
@@ -145,7 +178,7 @@ class ApiControllerTest {
 
     @Test
     void aiFailureReturnsBadGatewayWithoutLeakingDetails() throws Exception {
-        Mockito.when(moodAnalysisService.extractEmotions(Mockito.anyString()))
+        Mockito.when(moodAnalysisService.analyze(Mockito.anyString()))
             .thenThrow(new AiResponseException("Incorrect API key provided: sk-secret1234", new RuntimeException()));
 
         mockMvc.perform(post("/api/analyze")
@@ -158,7 +191,7 @@ class ApiControllerTest {
 
     @Test
     void unexpectedErrorReturnsGenericJson500() throws Exception {
-        Mockito.when(moodAnalysisService.extractEmotions(Mockito.anyString()))
+        Mockito.when(moodAnalysisService.analyze(Mockito.anyString()))
             .thenThrow(new IllegalStateException("db password is hunter2"));
 
         mockMvc.perform(post("/api/analyze")

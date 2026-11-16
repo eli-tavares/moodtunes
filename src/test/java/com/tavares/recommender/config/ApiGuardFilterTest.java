@@ -6,8 +6,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tavares.recommender.controller.ApiController;
+import com.tavares.recommender.service.MoodAnalysis;
 import com.tavares.recommender.service.MoodAnalysisService;
 import com.tavares.recommender.service.MusicService;
+import com.tavares.recommender.user.UserService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -33,6 +35,9 @@ class ApiGuardFilterTest {
     @MockitoBean
     private MusicService musicService;
 
+    @MockitoBean
+    private UserService users;
+
     @Test
     void missingOrWrongTokenIsUnauthorized() throws Exception {
         mockMvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -45,7 +50,7 @@ class ApiGuardFilterTest {
 
     @Test
     void correctTokenIsAccepted() throws Exception {
-        Mockito.when(moodAnalysisService.extractEmotions("happy")).thenReturn(List.of("joy"));
+        Mockito.when(moodAnalysisService.analyze("happy")).thenReturn(new MoodAnalysis(List.of("joy"), false));
         mockMvc.perform(post("/api/analyze").header(ApiGuardFilter.TOKEN_HEADER, "s3cret")
                 .with(req -> {
                     req.setRemoteAddr("10.0.0.50");
@@ -57,7 +62,7 @@ class ApiGuardFilterTest {
 
     @Test
     void clientIsRateLimited() throws Exception {
-        Mockito.when(moodAnalysisService.extractEmotions("happy")).thenReturn(List.of("joy"));
+        Mockito.when(moodAnalysisService.analyze("happy")).thenReturn(new MoodAnalysis(List.of("joy"), false));
         for (int i = 0; i < 3; i++) {
             mockMvc.perform(post("/api/analyze").header(ApiGuardFilter.TOKEN_HEADER, "s3cret")
                     .with(req -> {

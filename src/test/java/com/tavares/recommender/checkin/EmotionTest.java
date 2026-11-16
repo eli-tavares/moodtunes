@@ -71,4 +71,13 @@ class EmotionTest {
         assertEquals(1.5, new CheckIn(2, now, List.of(Emotion.HAPPY, Emotion.CALM)).mood());
         assertNull(new CheckIn(3, now, List.of(Emotion.HUNGRY)).mood());
     }
+
+    @Test
+    void toneTellsGoodFromLowFromMixed() {
+        assertEquals("good", Emotion.tone(List.of(Emotion.HAPPY, Emotion.CALM)));
+        assertEquals("low", Emotion.tone(List.of(Emotion.SAD, Emotion.TIRED)));
+        assertEquals("mixed", Emotion.tone(List.of(Emotion.EXCITED, Emotion.ANXIOUS)));
+        assertEquals("good", Emotion.tone(List.of(Emotion.NEUTRAL)));
+        assertEquals("good", Emotion.tone(List.of(Emotion.HUNGRY)));
+    }
 }

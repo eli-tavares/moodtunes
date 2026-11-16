@@ -15,8 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class MusicService {
 
-    private static final String SYSTEM_PROMPT_FILE = "music-prompt.json";
-    private static final int MAX_ITEMS = 10;
+    private static final String SYSTEM_PROMPT_FILE = "music-prompt.txt";
+    private static final int MAX_ITEMS = 5;
 
     private final ChatClientAdapter chatAdapter;
     private final ObjectMapper objectMapper;
@@ -36,7 +36,8 @@ public class MusicService {
     @Cacheable(value = "musicRecommendations", key = "#emotions.toString() + '_' + #type")
     public List<MusicRecommendation> recommend(List<Emotion> emotions, MusicType type) {
         String emotionList = emotions.stream().map(Emotion::code).collect(Collectors.joining(", "));
-        String userPrompt = "Emotions: " + emotionList + "\nType: " + type.getString();
+        String userPrompt = "Emotions: " + emotionList + "\nMood: " + Emotion.tone(emotions)
+            + "\nType: " + type.getString();
         return parse(chatAdapter.call(systemPrompt, userPrompt));
     }
 
@@ -67,7 +68,7 @@ public class MusicService {
     private static String loadSystemPrompt() {
         String fallback = """
             You are a helpful music recommendation assistant.
-            Suggest 5 songs or albums that fit the user's emotion.
+            Suggest exactly 5 real songs or albums that fit the user's emotions and mood (good, low or mixed).
             Return ONLY a JSON array of objects with "title", "artist" and "description" properties.
             """;
         return new PromptLoader(SYSTEM_PROMPT_FILE, fallback).loadPromptAsString();

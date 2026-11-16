@@ -22,13 +22,15 @@ public record ReportResponse(
      * @param avgMood         average mood score of the period's check-ins
      * @param previousAvgMood the same for the period just before
      * @param moodChange      avgMood - previousAvgMood, when both exist
+     * @param avgIntensity    average strength (1-5) over the check-ins that gave one, {@code null} when none did
      */
     public record Summary(int checkIns, int activeDays, Double avgMood, int previousCheckIns,
-                          Double previousAvgMood, Double moodChange) {
+                          Double previousAvgMood, Double moodChange, Double avgIntensity,
+                          Double previousAvgIntensity) {
     }
 
     /** One day (or one week) of the chart. {@code groups} always lists all four groups; {@code emotions} only seen ones. */
-    public record Bucket(LocalDate start, LocalDate end, int checkIns, Double avgMood,
+    public record Bucket(LocalDate start, LocalDate end, int checkIns, Double avgMood, Double avgIntensity,
                          Map<String, Integer> groups, Map<String, Integer> emotions) {
     }
 

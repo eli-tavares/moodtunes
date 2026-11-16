@@ -50,9 +50,13 @@
         <header class="top">
             <div>
                 <h1>🎶 MoodTunes</h1>
-                <p class="tagline">Tell me how you feel, save a check-in, and get music that fits.</p>
+                <p id="whoami" class="tagline">Tell me how you feel, save a check-in, and get music that fits.</p>
             </div>
-            <button id="lockBtn" class="btn small" type="button" aria-label="Lock the app">🔒 Lock</button>
+            <div class="top-actions">
+                <button id="musicBtn" class="btn small" type="button" aria-pressed="true"
+                        aria-label="Music suggestions are on. Tap to turn them off.">🎵 Music: on</button>
+                <button id="lockBtn" class="btn small" type="button" aria-label="Lock the app">🔒 Lock</button>
+            </div>
         </header>
 
         <div class="tabs" role="tablist" aria-label="Sections">
@@ -60,6 +64,8 @@
                     aria-controls="viewCheckin">Check in</button>
             <button id="tabReports" class="tab" role="tab" type="button" aria-selected="false"
                     aria-controls="viewReports">Reports</button>
+            <button id="tabSummary" class="tab" role="tab" type="button" aria-selected="false"
+                    aria-controls="viewSummary">Summary</button>
         </div>
 
         <!-- ===== Check in ===== -->
@@ -73,10 +79,19 @@
 
             <section id="emotionsCard" class="card" hidden aria-labelledby="emotionsTitle">
                 <h2 id="emotionsTitle">Which fit?</h2>
-                <p class="hint">Pick up to 3. Your sentence is never saved, only the emotions you choose.</p>
+                <p class="hint">Pick up to 3.</p>
+                <p id="flagNote" class="notice" hidden>That sounded heavy. Your words can be kept with this check-in, so you can show them to your therapist.</p>
                 <div id="emotionsContainer" class="chips" role="group" aria-label="Emotions"></div>
-                <div class="actions">
+                <p id="emotionHint" class="emotion-hint" aria-live="polite">Tap a word to see what it means.</p>
+                <fieldset class="strength">
+                    <legend>How strong is it? <span class="muted">(optional)</span></legend>
+                    <div id="strengthButtons" class="strength-row" role="group" aria-label="Strength from 1 to 5"></div>
+                    <div class="strength-ends" aria-hidden="true"><span>Barely</span><span>Very strong</span></div>
+                </fieldset>
+                <label class="check"><input type="checkbox" id="keepWords"><span>Keep my words with this check-in<br><span class="muted">Shown in your history and export. If unticked, only the emotions are saved.</span></span></label>
+                <div class="actions row">
                     <button id="saveBtn" class="btn primary" type="button" disabled>Save check-in</button>
+                    <button id="newBtn" class="btn" type="button">New check-in</button>
                 </div>
             </section>
 
@@ -91,6 +106,9 @@
             <section id="resultsCard" class="card" hidden aria-labelledby="resultsTitle">
                 <h2 id="resultsTitle">Recommendations</h2>
                 <ul id="resultsList" class="results"></ul>
+                <div class="actions">
+                    <button id="newBtn2" class="btn" type="button">New check-in</button>
+                </div>
             </section>
 
             <p id="status" role="status" aria-live="polite"></p>
@@ -122,6 +140,13 @@
                     <div id="moodChart"></div><div id="moodTable" hidden></div>
                 </section>
 
+                <section class="card" aria-labelledby="intensityTitle">
+                    <div class="card-head"><h2 id="intensityTitle">How strong it felt</h2>
+                        <button class="link-btn" type="button" data-table-for="intensity">Table</button></div>
+                    <p class="subtitle">Average strength per check-in, from 1 (barely) to 5 (very strong). Only check-ins where you said.</p>
+                    <div id="intensityChart"></div><div id="intensityTable" hidden></div>
+                </section>
+
                 <section class="card" aria-labelledby="mixTitle">
                     <div class="card-head"><h2 id="mixTitle">What you felt</h2>
                         <button class="link-btn" type="button" data-table-for="mix">Table</button></div>
@@ -151,6 +176,21 @@
                 </section>
             </div>
             <p id="reportStatus" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- ===== Summary for a session ===== -->
+        <div id="viewSummary" role="tabpanel" aria-labelledby="tabSummary" hidden>
+            <section class="card" aria-labelledby="summaryTitle">
+                <h2 id="summaryTitle">Summary for my session</h2>
+                <p id="summaryRange" class="subtitle"></p>
+                <p class="print-only" id="summaryWho"></p>
+                <div class="actions row no-print">
+                    <button id="printBtn" class="btn primary" type="button">Print / save as PDF</button>
+                    <button id="copyBtn" class="btn" type="button">Copy as text</button>
+                </div>
+                <div id="summaryBody"></div>
+            </section>
+            <p id="summaryStatus" class="no-print" role="status" aria-live="polite"></p>
         </div>
     </div>
 </main>

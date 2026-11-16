@@ -7,7 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import com.tavares.recommender.user.UserDirectory;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -27,18 +28,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class ApiGuardFilter extends OncePerRequestFilter {
 
     public static final String TOKEN_HEADER = "X-Access-Token";
+    /** Request attribute holding the signed-in user's name; controllers read it, clients can never set it. */
+    public static final String USER_ATTRIBUTE = "moodtunes.user";
     static final long MAX_BODY_BYTES = 4 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(ApiGuardFilter.class);
 
-    private final AppProperties properties;
+    private final UserDirectory directory;
     private final RateLimiter aiLimiter;
     private final RateLimiter generalLimiter;
     private final RateLimiter authFailureLimiter;
     private final ObjectMapper objectMapper;
 
     public ApiGuardFilter(AppProperties properties, ObjectMapper objectMapper) {
-        this.properties = properties;
+        this.directory = new UserDirectory(properties);
         this.objectMapper = objectMapper;
         var limits = properties.rateLimit();
         this.aiLimiter = new RateLimiter(limits.perClientPerMinute(), limits.globalPerMinute());
@@ -60,8 +63,9 @@ public class ApiGuardFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (properties.accessTokenEnabled() && !tokenMatches(request.getHeader(TOKEN_HEADER))) {
-            // Same treatment for missing and wrong tokens; also throttle guessing.
+        Optional<String> user = directory.authenticate(request.getHeader(TOKEN_HEADER));
+        if (user.isEmpty()) {
+            // Same treatment for missing and wrong codes; also throttle guessing.
             if (!authFailureLimiter.tryAcquire(request.getRemoteAddr())) {
                 reject(response, HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Please slow down.");
                 return;
@@ -69,6 +73,7 @@ public class ApiGuardFilter extends OncePerRequestFilter {
             reject(response, HttpStatus.UNAUTHORIZED, "A valid access token is required.");
             return;
         }
+        request.setAttribute(USER_ATTRIBUTE, user.get());
 
         // AI calls cost money, so they get the tight budget; saving and reading mood data is cheap.
         RateLimiter limiter = isAiCall(request) ? aiLimiter : generalLimiter;
@@ -85,16 +90,6 @@ public class ApiGuardFilter extends OncePerRequestFilter {
     private static boolean isAiCall(HttpServletRequest request) {
         String path = request.getRequestURI();
         return path.equals("/api/analyze") || path.equals("/api/recommend");
-    }
-
-    private boolean tokenMatches(String supplied) {
-        if (supplied == null) {
-            return false;
-        }
-        // Constant-time comparison to avoid leaking the token through timing differences.
-        return MessageDigest.isEqual(
-            supplied.getBytes(StandardCharsets.UTF_8),
-            properties.accessToken().getBytes(StandardCharsets.UTF_8));
     }
 
     private void reject(HttpServletResponse response, HttpStatus status, String detail) throws IOException {

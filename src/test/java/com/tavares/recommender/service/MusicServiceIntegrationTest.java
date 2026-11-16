@@ -58,7 +58,7 @@ class MusicServiceIntegrationTest {
 
     @Test
     void severalEmotionsGoIntoThePrompt() {
-        when(chatAdapter.call(anyString(), contains("Emotions: anxious, tired"))).thenReturn(JSON);
+        when(chatAdapter.call(anyString(), contains("Emotions: anxious, tired\nMood: low\nType: songs"))).thenReturn(JSON);
         assertEquals(1, musicService.recommend(List.of(Emotion.ANXIOUS, Emotion.TIRED), MusicType.SONGS).size());
     }
 

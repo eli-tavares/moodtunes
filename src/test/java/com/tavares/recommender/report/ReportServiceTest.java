@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,7 +36,7 @@ class ReportServiceTest {
     }
 
     private void data(CheckIn... checkIns) {
-        when(repository.findBetween(any(), any())).thenReturn(List.of(checkIns));
+        when(repository.findBetween(anyLong(), any(), any())).thenReturn(List.of(checkIns));
     }
 
     @Test
@@ -48,7 +49,7 @@ class ReportServiceTest {
             at("2026-11-12T08:00:00Z", Emotion.HUNGRY),                    // no mood score
             at("2026-11-16T07:00:00Z", Emotion.HAPPY, Emotion.CALM));      // +1.5
 
-        ReportResponse report = service.report(ReportRange.WEEK, ZoneOffset.UTC);
+        ReportResponse report = service.report(1L, ReportRange.WEEK, ZoneOffset.UTC);
 
         assertEquals("week", report.range());
         assertEquals(LocalDate.parse("2026-11-10"), report.from());
@@ -91,7 +92,7 @@ class ReportServiceTest {
             at("2026-11-12T08:00:00Z", Emotion.HUNGRY),
             at("2026-11-16T07:00:00Z", Emotion.HAPPY, Emotion.CALM));
 
-        var stats = service.report(ReportRange.WEEK, ZoneOffset.UTC).emotions();
+        var stats = service.report(1L, ReportRange.WEEK, ZoneOffset.UTC).emotions();
 
         assertEquals("calm", stats.getFirst().emotion());
         assertEquals(2, stats.getFirst().count());
@@ -105,7 +106,7 @@ class ReportServiceTest {
     void monthIsThirtyDailyBuckets() {
         data(at("2026-10-18T10:00:00Z", Emotion.HAPPY),            // first day of the window
             at("2026-10-17T10:00:00Z", Emotion.SAD));              // one day earlier: previous period
-        ReportResponse report = service.report(ReportRange.MONTH, ZoneOffset.UTC);
+        ReportResponse report = service.report(1L, ReportRange.MONTH, ZoneOffset.UTC);
 
         assertEquals(LocalDate.parse("2026-10-18"), report.from());
         assertEquals(30, report.buckets().size());
@@ -121,7 +122,7 @@ class ReportServiceTest {
             at("2026-11-10T10:00:00Z", Emotion.SAD),               // start of the last week
             at("2026-11-16T10:00:00Z", Emotion.CALM));             // last day
 
-        ReportResponse report = service.report(ReportRange.THREE_MONTHS, ZoneOffset.UTC);
+        ReportResponse report = service.report(1L, ReportRange.THREE_MONTHS, ZoneOffset.UTC);
 
         assertEquals(LocalDate.parse("2026-08-18"), report.from());
         assertEquals(7, report.bucketDays());
@@ -140,7 +141,7 @@ class ReportServiceTest {
         ZoneId auckland = ZoneId.of("Pacific/Auckland");
         data(at("2026-11-16T12:30:00Z", Emotion.HAPPY));
 
-        ReportResponse report = service.report(ReportRange.WEEK, auckland);
+        ReportResponse report = service.report(1L, ReportRange.WEEK, auckland);
 
         assertEquals(LocalDate.parse("2026-11-17"), report.to());
         assertEquals(LocalDate.parse("2026-11-11"), report.from());
@@ -151,7 +152,7 @@ class ReportServiceTest {
     @Test
     void emptyPeriodHasNoScoresAndNoStats() {
         data();
-        ReportResponse report = service.report(ReportRange.WEEK, ZoneOffset.UTC);
+        ReportResponse report = service.report(1L, ReportRange.WEEK, ZoneOffset.UTC);
 
         assertEquals(0, report.summary().checkIns());
         assertNull(report.summary().avgMood());
@@ -165,5 +166,34 @@ class ReportServiceTest {
         assertEquals(ReportRange.THREE_MONTHS, ReportRange.parse("3months"));
         assertEquals(ReportRange.WEEK, ReportRange.parse("WEEK"));
         assertThrows(BadRequestException.class, () -> ReportRange.parse("year"));
+    }
+
+    @Test
+    void intensityIsAveragedOverTheCheckInsThatGaveOne() {
+        data(
+            new CheckIn(1, Instant.parse("2026-11-03T10:00:00Z"), List.of(Emotion.SAD), null, false, 2),   // previous
+            new CheckIn(2, Instant.parse("2026-11-10T10:00:00Z"), List.of(Emotion.SAD), null, false, 4),
+            new CheckIn(3, Instant.parse("2026-11-10T18:00:00Z"), List.of(Emotion.CALM), null, false, 2),
+            new CheckIn(4, Instant.parse("2026-11-12T10:00:00Z"), List.of(Emotion.CALM), null, false, null));
+
+        ReportResponse report = service.report(1L, ReportRange.WEEK, ZoneOffset.UTC);
+
+        assertEquals(3.0, report.summary().avgIntensity());
+        assertEquals(2.0, report.summary().previousAvgIntensity());
+        assertEquals(3.0, report.buckets().get(0).avgIntensity());       // 10 Nov
+        assertNull(report.buckets().get(2).avgIntensity());              // 12 Nov: none gave one
+        assertNull(report.buckets().get(1).avgIntensity());              // 11 Nov: no check-ins
+    }
+
+    @Test
+    void sessionSummaryHoldsTheWeekAndTheCheckInsInIt() {
+        data(new CheckIn(1, Instant.parse("2026-11-10T10:00:00Z"), List.of(Emotion.SAD), "rough day", true, 4));
+
+        SessionSummary summary = service.sessionSummary(1L, ZoneOffset.UTC);
+
+        assertEquals("week", summary.report().range());
+        assertEquals(1, summary.checkIns().size());
+        assertEquals("rough day", summary.checkIns().getFirst().note());
+        assertEquals(4, summary.checkIns().getFirst().intensity());
     }
 }

@@ -43,7 +43,8 @@ docker compose up --build    # needs OPENAI_API_KEY in your environment
 | `SPRING_PROFILES_ACTIVE=claude` | Use Claude instead of OpenAI (see "Choosing the AI provider"). |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key (only with the `claude` profile). |
 | `ANTHROPIC_MODEL` | Claude model (default `claude-haiku-5-5`). |
-| `APP_ACCESS_TOKEN` | Optional shared secret. If set, every `/api` call must send it in the `X-Access-Token` header. The web UI asks for it once and stores it on the device. **Set this whenever the app is reachable from the internet** - otherwise anyone with the URL can spend your OpenAI credit. |
+| `APP_USERS` | **Who may sign in**, as `name:code,name:code`, for example `elit:CODE1,ainek:CODE2` (names in lower case; each code at least 12 characters, unique, no commas). Everyone has their **own** check-ins, reports and settings. Make a code with `openssl rand -base64 24`. **Set this whenever the app is reachable from the internet** - otherwise anyone with the URL can spend your AI credit. |
+| `APP_ACCESS_TOKEN` | The old single shared code. Only used when `APP_USERS` is not set (it then acts as one user called `me`); ignored, with a log line, once `APP_USERS` is set. |
 | `OPENAI_MODEL` | Model to use (default `gpt-6-luna`). See "Keeping AI cost low". |
 | `PORT` | HTTP port (default 8080). |
 
@@ -106,7 +107,7 @@ Railway builds the `Dockerfile` straight from GitHub and redeploys on every push
    |----------|-------|
    | `SPRING_PROFILES_ACTIVE` | `claude` |
    | `ANTHROPIC_API_KEY` | your Anthropic API key |
-   | `APP_ACCESS_TOKEN` | a long random code, e.g. `openssl rand -base64 24` |
+   | `APP_USERS` | `elit:CODE1,ainek:CODE2` (one code each; see Configuration above) |
 
 3. **Add a database** (see "Database" below), otherwise your mood history is lost on every redeploy.
 4. **Settings -> Networking -> Generate Domain** to get your public `https://...up.railway.app` URL.
@@ -114,7 +115,12 @@ Railway builds the `Dockerfile` straight from GitHub and redeploys on every push
 6. In Railway's billing settings set a **usage limit**, and in the Anthropic Console set a monthly spend limit.
 
 Railway injects `PORT`, which the app already honours. Expect roughly 300 MB of memory in use. Behind Railway's proxy
-all traffic may share one rate-limit bucket, which is fine for a single user; `APP_ACCESS_TOKEN` is your real protection.
+all traffic may share one rate-limit bucket, which is fine for two people; the access codes are your real protection.
+
+**Upgrading from the single shared code:** set `APP_USERS` in Railway **before** deploying this version (you can leave
+`APP_ACCESS_TOKEN` in place, it is ignored). On startup, every check-in saved so far is handed to the **first** user in
+the list, so put yourself first. If the app ever ran with only `APP_ACCESS_TOKEN` it called that person `me`; those
+check-ins are moved to the first user too, so nothing is lost.
 
 ---
 
@@ -126,8 +132,8 @@ phone can reach over HTTPS (a cloud host, or your own machine exposed privately,
 1. Deploy it (see Docker above) and open the HTTPS URL in **Safari** on the iPhone.
 2. Tap **Share → Add to Home Screen**.
 3. Launch **MoodTunes** from the home screen - it opens full screen like a native app.
-4. If you set `APP_ACCESS_TOKEN`, the app opens on a **lock screen** and asks for it before showing anything else
-   (see "Lock screen" below).
+4. The app opens on a **lock screen** and asks for your own access code before showing anything else
+   (see "Sign-in" below).
 
 The app shell is cached by a service worker so it opens instantly and shows a friendly message when offline;
 recommendations always need a connection because they come from the AI.
@@ -141,23 +147,56 @@ Rejected requests are logged by field name (never by value), and the error messa
 
 ---
 
-## 🔒 Lock screen
+## 🔒 Sign-in and users
 
-When `APP_ACCESS_TOKEN` is set, MoodTunes asks for the access code before showing the app. Tick
-**Keep me unlocked on this device** to stay signed in (the default), or untick it to be asked again each time the app
-is closed and reopened. The **Lock** button forgets the code and clears the page. If the code on the server changes, the
-app notices and asks again. On the iPhone, the field works with the Passwords app/Keychain autofill (not verified
-inside the home-screen app). With no `APP_ACCESS_TOKEN` (local use) there is no lock screen.
+Each person has their own access code (`APP_USERS`). The app opens on a lock screen, and your code decides **whose**
+check-ins, reports and settings you see. Tick **Keep me unlocked on this device** to stay signed in (the default), or
+untick it to be asked again each time the app is closed and reopened. The **Lock** button forgets the code and clears
+the page, which is also how you switch person on a shared phone. If a code is changed or removed on the server, the
+app notices and asks again. On the iPhone, the field works with the Passwords app autofill (not verified inside the
+home-screen app). With nothing configured (local use) there is no lock screen and everything belongs to one user.
 
-The lock screen is a convenience on top of the real protection: the server rejects every `/api` call without the code
-(`401`), and wrong guesses are rate limited. The page itself (HTML/JS/CSS) contains no personal data.
+- **Separate data:** the server works out who you are from the code on every request, never from anything the page
+  sends, and every query is scoped to that person. One person cannot read, list, export or delete the other's
+  check-ins (this is covered by automated tests).
+- **Not a privacy wall from the administrator:** whoever has access to the Railway project or the database can still
+  read the raw data. The separation is between the two people *using the app*.
+- **Revoking someone:** remove their entry from `APP_USERS` and redeploy.
+- **Shared AI cost:** both people spend from the same AI credit and the same global rate limit.
+
+### 🎵 Music on/off
+
+The **Music** button next to Lock switches music suggestions on or off **for you only** (saved on the server, so it
+follows you across devices). When off, Songs and Albums disappear, and the server refuses music requests (`403`) so no
+AI call is ever made.
+
+### ➕ New check-in
+
+After saving, **New check-in** clears the sentence, the emotions and the music results so you can start again. It is
+next to **Save check-in**, and again under the music results.
+
+The lock screen is a convenience on top of the real protection: the server rejects every `/api` call without a valid
+code (`401`), and wrong guesses are rate limited. The page itself (HTML/JS/CSS) contains no personal data.
 
 ---
 
 ## 📈 Mood log and reports
 
-After **Analyze**, pick up to 3 emotions that fit and tap **Save check-in**. Only the emotions are stored, never the
-sentence you typed. Music for the same selection is one tap away.
+After **Analyze**, pick up to 3 emotions that fit and tap **Save check-in**. By default only the emotions are
+stored, never the sentence you typed. Tick **Keep my words with this check-in** to store the sentence too (up to 500
+characters); it then shows in the history and the export, which is handy to share with a therapist. When the AI thinks the
+sentence may be about self-harm it still offers the emotions, shows a gentle note, ticks the box for you and marks the
+check-in "Sounded heavy". There are no helpline texts: this is a personal tracker, not a crisis service.
+Music for the same selection is one tap away.
+
+**Tap a word** to see a one-line meaning of it, which helps when two feelings are close. You can also give the check-in a
+**strength** from 1 (barely) to 5 (very strong); it is optional and shows in the history, the export and a "How strong it
+felt" chart.
+
+The **Summary** tab is made for a weekly therapy session: the last 7 days with the key numbers, the most frequent
+emotions, any moments that "sounded heavy" and every check-in (with strength and the words you chose to keep). **Print /
+save as PDF** gives a clean one-page sheet (on iPhone: Share, then Save to Files), and **Copy as text** puts it on the
+clipboard for a message or email. It only ever contains your own data.
 
 The **Reports** tab covers the **last 7 days**, the **last 30 days** or the **last 13 weeks** ("3 months"), each compared
 with the period just before it:
@@ -213,12 +252,14 @@ Stateless JSON API (errors are [RFC 7807](https://datatracker.ietf.org/doc/html/
 - `GET /api/reports?range=week|month|3months&tz=Europe/Dublin` - summary, per-day (or per-week) buckets and emotion
   counts; `tz` is your IANA time zone so days match your day
 - `GET /api/export` - all check-ins as a JSON download
-- `GET /api/auth/check` - `204` if the access code is accepted (or none is required), `401` otherwise; makes no AI call
+- `GET /api/me` - who you are and your settings: `{ "name": "elit", "musicEnabled": true }`; `401` for a wrong code
+- `PUT /api/me/music` - `{ "enabled": false }` turns your music suggestions off (or on)
+- `GET /api/auth/check` - `204` if the code is accepted (kept for older copies of the page); makes no AI call
 - `GET /actuator/health` - liveness/readiness for hosting platforms
 
 Status codes: `400` invalid input, `401` missing/wrong access token, `413` body too large, `429` rate limited
 (AI calls have a tight budget because they cost money; saving and reading mood data have a generous one),
-`502` the AI failed or answered with something unusable (never cached, so a retry works).
+`403` music is turned off for you, `502` the AI failed or answered with something unusable (never cached, so a retry works).
 
 ---
 
@@ -249,8 +290,11 @@ vocabulary, the database layer (real SQL and the Flyway migration against an in-
 
 1. The UI sends your mood text to `/api/analyze`; `MoodAnalysisService` asks the model to choose from the fixed
    emotion list and discards anything else.
-2. You pick up to 3 emotions. **Save check-in** stores just those emotions (`/api/checkins`).
-3. Songs or albums for the selection come from `/api/recommend`: `MusicService` asks the model for a JSON list, parses
+2. You pick up to 3 emotions. **Save check-in** stores those emotions (`/api/checkins`), plus your sentence only if you
+   ticked the box.
+3. Songs or albums for the selection come from `/api/recommend`: the app works out whether the mood is good, low or mixed
+   from the emotion scores, `MusicService` asks the model for a JSON list of 5 (match good moods; meet low ones, then ease
+   lighter), parses
    and validates it, and caches the parsed result (Caffeine, key = emotions + media type, 12 h, max 500 entries).
 4. `ReportService` turns the saved check-ins into the weekly, monthly and 3-month reports.
 

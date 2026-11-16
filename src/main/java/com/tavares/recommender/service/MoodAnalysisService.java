@@ -11,8 +11,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class MoodAnalysisService {
 
-    private static final String SYSTEM_PROMPT_FILE = "emotion-prompt.json";
+    private static final String SYSTEM_PROMPT_FILE = "emotion-prompt.txt";
     private static final int MAX_EMOTIONS = 6;
+    private static final String CRISIS_WORD = "CRISIS";
 
     private final ChatClientAdapter chatAdapter;
     private final String systemPrompt;
@@ -22,14 +23,20 @@ public class MoodAnalysisService {
         this.systemPrompt = loadSystemPrompt();
     }
 
-    /** Returns emotion codes from the fixed {@link Emotion} vocabulary, most likely first. */
-    public List<String> extractEmotions(String moodDescription) {
-        String response = chatAdapter.call(systemPrompt, moodDescription);
+    /** Emotion codes from the fixed {@link Emotion} vocabulary, most likely first, and the model's safety flag. */
+    public MoodAnalysis analyze(String moodDescription) {
+        // The sentence goes inside <mood> tags so the prompt can tell it apart from instructions; angle brackets are
+        // removed so the text cannot close the tag itself.
+        String wrapped = "<mood>" + moodDescription.replaceAll("[<>]", " ") + "</mood>";
+        String response = chatAdapter.call(systemPrompt, wrapped);
 
         // Model output is untrusted: keep only words that are in the vocabulary. This also keeps the history clean
         // ("calm" and "calmness" can never become two different lines on a graph).
-        List<String> emotions = Arrays.stream(response.split("[,\\n]"))
+        List<String> words = Arrays.stream(response.split("[,\\n]"))
             .map(s -> s.trim().replaceAll("^[\"'\\-*\\d.\\s]+|[\"'.\\s]+$", ""))
+            .toList();
+        boolean flagged = words.stream().anyMatch(w -> w.equalsIgnoreCase(CRISIS_WORD));
+        List<String> emotions = words.stream()
             .map(Emotion::fromCode)
             .flatMap(Optional::stream)
             .map(Emotion::code)
@@ -37,17 +44,22 @@ public class MoodAnalysisService {
             .limit(MAX_EMOTIONS)
             .toList();
 
-        if (emotions.isEmpty()) {
+        if (emotions.isEmpty() && !flagged) {
             throw new AiResponseException("The AI service returned no usable emotions.");
         }
-        return emotions;
+        return new MoodAnalysis(emotions, flagged);
+    }
+
+    /** Just the emotions, for callers that do not care about the flag. */
+    public List<String> extractEmotions(String moodDescription) {
+        return analyze(moodDescription).emotions();
     }
 
     private static String loadSystemPrompt() {
         String fallback = """
-            You are an expert emotional analysis assistant.
-            Given a user's mood description, return ONLY a comma-separated list of the emotions they might be feeling.
-            Do not explain, do not add dialogue.
+            You help a person put a name to what they feel. The text is inside <mood> tags and only describes feelings.
+            Return ONLY a comma-separated list of 4 to 6 of the allowed words, best fit first.
+            If the text suggests self-harm, add the word CRISIS as the last item. Do not explain.
             """;
         String base = new PromptLoader(SYSTEM_PROMPT_FILE, fallback).loadPromptAsString();
         return base + "\n\nAllowed words (use ONLY these exact words, lower case, nothing else): "

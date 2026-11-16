@@ -22,6 +22,12 @@ const analyzeBtn = $('analyzeBtn');
 const emotionsCard = $('emotionsCard');
 const emotionsContainer = $('emotionsContainer');
 const saveBtn = $('saveBtn');
+const keepWords = $('keepWords');
+const flagNote = $('flagNote');
+const newBtn = $('newBtn');
+const newBtn2 = $('newBtn2');
+const musicBtn = $('musicBtn');
+const whoami = $('whoami');
 const mediaCard = $('mediaCard');
 const mediaQuestion = $('mediaQuestion');
 const songsBtn = $('songsBtn');
@@ -38,6 +44,49 @@ const reportStatus = $('reportStatus');
 
 let selected = [];            // emotion codes picked for this check-in, in the order tapped (max 3)
 let lastSavedKey = null;      // the selection that was last saved, so one tap cannot save the same thing twice
+// Short plain-language meanings, shown when a word is tapped, to help choose between close words.
+const EMOTION_HELP = {
+    happy: 'Glad, light, enjoying the moment.',
+    excited: 'Energised and looking forward to something.',
+    proud: 'Pleased with something you did or who you are.',
+    grateful: 'Thankful for someone or something.',
+    loved: 'Cared for and valued by someone.',
+    inspired: 'Moved to create, try or do something.',
+    hopeful: 'Believing things can get better.',
+    relieved: 'A weight has lifted; the worry is over.',
+    calm: 'Settled and unhurried inside.',
+    content: 'Satisfied; nothing is missing right now.',
+    relaxed: 'Loose and at ease, without tension.',
+    curious: 'Interested and wanting to find out more.',
+    motivated: 'Ready and willing to get on with things.',
+    neutral: 'Neither good nor bad; just ordinary.',
+    nostalgic: 'Missing a time or person from the past, often warmly.',
+    reflective: 'Thinking things over, looking inward.',
+    surprised: 'Caught off guard, for better or worse.',
+    anxious: 'Worried or uneasy, often about what might happen.',
+    stressed: 'Under pressure, as if there is too much to handle.',
+    overwhelmed: 'Too much at once to cope with or sort out.',
+    sad: 'Low or heavy, often after a loss or hurt.',
+    lonely: 'Missing connection, even if people are around.',
+    angry: 'Strong displeasure, often at something unfair.',
+    frustrated: 'Blocked or stuck, things are not working.',
+    irritable: 'Short-tempered; small things get under your skin.',
+    disappointed: 'Let down; things did not turn out as hoped.',
+    guilty: 'Feeling you did something wrong or let someone down.',
+    bored: 'Under-stimulated; nothing holds your interest.',
+    tired: 'Low on energy, body or mind.',
+    hungry: 'Needing food.',
+    sleepy: 'Ready to sleep.',
+    restless: 'Unable to settle; fidgety.',
+    sore: 'Aching or hurting in the body.',
+    unwell: 'Physically off, ill or run down.',
+};
+const fmtStrength = (v) => (v === null || v === undefined ? '–' : v.toFixed(1));
+const STRENGTH_NAME = ['', 'barely', 'mild', 'moderate', 'strong', 'very strong'];
+let summaryData = null;                         // the last-7-days summary on screen (cleared on lock)
+let strength = null;                            // 1-5, or null when not chosen (optional)
+let analyzed = { text: '', flagged: false };   // the sentence behind the emotions on screen (kept only if the box is ticked)
+let me = { name: '', musicEnabled: true };   // who is signed in and their settings (from /api/me)
 let seenVersion = null;       // the server version this page started with (X-App-Version)
 let memoryToken = '';         // fallback when browser storage is unavailable (private mode, blocked storage)
 
@@ -75,7 +124,8 @@ function showView(view) {
     appContent.hidden = view !== 'app';
 }
 
-function resetApp() {
+// Clears the check-in flow so another one can start (after saving, or to abandon this one).
+function resetFlow() {
     moodText.value = '';
     emotionsContainer.replaceChildren();
     resultsList.replaceChildren();
@@ -84,7 +134,24 @@ function resetApp() {
     resultsCard.hidden = true;
     selected = [];
     lastSavedKey = null;
+    analyzed = { text: '', flagged: false };
+    strength = null;
+    $('emotionHint').textContent = 'Tap a word to see what it means.';
+    keepWords.checked = false;
+    flagNote.hidden = true;
     setStatus('');
+    updateSelection();
+}
+
+function newCheckIn() {
+    resetFlow();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    moodText.focus();
+}
+
+function resetApp() {
+    resetFlow();
+    me = { name: '', musicEnabled: true };
     clearReports();
     setTab('checkin');
 }
@@ -97,29 +164,60 @@ function showLock(message = '') {
     tokenInput.focus();
 }
 
-function showApp() {
+function showApp(signedIn) {
     lockStatus.textContent = '';
+    if (signedIn) applyMe(signedIn);
     showView('app');
 }
 
+// Shows who is signed in and keeps the music button and the music cards in step with their setting.
+function applyMe(next) {
+    me = next;
+    const on = me.musicEnabled;
+    musicBtn.setAttribute('aria-pressed', String(on));
+    musicBtn.textContent = on ? '🎵 Music: on' : '🎵 Music: off';
+    musicBtn.setAttribute('aria-label', on ? 'Music suggestions are on. Tap to turn them off.'
+        : 'Music suggestions are off. Tap to turn them on.');
+    whoami.textContent = (me.name && me.name !== 'local' && me.name !== 'me' ? `Hi, ${me.name}. ` : '')
+        + (on ? 'Tell me how you feel, save a check-in, and get music that fits.'
+            : 'Tell me how you feel and save a check-in.');
+    if (!on) resultsCard.hidden = true;
+    updateSelection();
+}
+
+async function toggleMusic() {
+    musicBtn.disabled = true;
+    try {
+        applyMe(await request('PUT', '/api/me/music', { enabled: !me.musicEnabled }));
+    } catch (e) {
+        handleAuthOr(e, (msg) => setStatus(msg, true));
+    } finally {
+        musicBtn.disabled = false;
+    }
+}
+
 // ---- access check ----------------------------------------------------------------------------------------
-// -> 'ok' | 'denied' | 'throttled' | 'offline' | 'error'
+// -> { result: 'ok' | 'denied' | 'throttled' | 'offline' | 'error', me }
 async function checkAccess(token) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
     try {
-        const resp = await fetch('/api/auth/check', {
+        const resp = await fetch('/api/me', {
             headers: token ? { 'X-Access-Token': token } : {},
             cache: 'no-store',
             signal: controller.signal,
         });
         noteVersion(resp);
-        if (resp.ok) return 'ok';
-        if (resp.status === 401) return 'denied';
-        if (resp.status === 429) return 'throttled';
-        return 'error';
+        if (resp.ok) {
+            let signedIn = null;
+            try { signedIn = await resp.json(); } catch { /* keep defaults */ }
+            return { result: 'ok', me: signedIn };
+        }
+        if (resp.status === 401) return { result: 'denied' };
+        if (resp.status === 429) return { result: 'throttled' };
+        return { result: 'error' };
     } catch {
-        return 'offline';
+        return { result: 'offline' };
     } finally {
         clearTimeout(timer);
     }
@@ -127,16 +225,16 @@ async function checkAccess(token) {
 
 // Retries 5xx answers (a sleeping/booting host), so this first call also wakes the server for the real ones.
 async function checkAccessWithWake(token, onWaiting) {
-    let result = 'error';
+    let outcome = { result: 'error' };
     for (let attempt = 0; attempt < WAKE_ATTEMPTS; attempt++) {
-        result = await checkAccess(token);
-        if (result !== 'error') return result;
+        outcome = await checkAccess(token);
+        if (outcome.result !== 'error') return outcome;
         if (attempt < WAKE_ATTEMPTS - 1) {
             onWaiting('Waking up the server…');
             await new Promise((r) => setTimeout(r, WAKE_DELAY_MS));
         }
     }
-    return result;
+    return outcome;
 }
 
 const LOCK_MESSAGES = {
@@ -149,10 +247,10 @@ const LOCK_MESSAGES = {
 async function start() {
     showView('boot');
     const token = readToken();
-    const result = await checkAccessWithWake(token, (msg) => { bootEl.textContent = msg; });
+    const { result, me: signedIn } = await checkAccessWithWake(token, (msg) => { bootEl.textContent = msg; });
     bootEl.textContent = 'Opening…';
 
-    if (result === 'ok') return showApp();
+    if (result === 'ok') return showApp(signedIn);
     if (result === 'denied') {
         clearToken();
         return showLock(token ? 'Your access code is no longer accepted. Please enter it again.' : '');
@@ -170,12 +268,12 @@ lockForm.addEventListener('submit', async (event) => {
     if (!value) return;
     unlockBtn.disabled = true;
     lockStatus.textContent = 'Checking…';
-    const result = await checkAccessWithWake(value, (msg) => { lockStatus.textContent = msg; });
+    const { result, me: signedIn } = await checkAccessWithWake(value, (msg) => { lockStatus.textContent = msg; });
     unlockBtn.disabled = false;
     if (result === 'ok') {
         saveToken(value, rememberChk.checked);
         tokenInput.value = '';
-        return showApp();
+        return showApp(signedIn);
     }
     lockStatus.textContent = LOCK_MESSAGES[result];
     if (result === 'denied') {
@@ -261,6 +359,9 @@ async function run(action, busyMessage) {
         await action();
     } catch (e) {
         handleAuthOr(e, (msg) => setStatus(msg, true));
+        if (e.status === 403) {                    // e.g. music was switched off on another device
+            request('GET', '/api/me').then(applyMe).catch(() => {});
+        }
     } finally {
         setBusy(false);
     }
@@ -279,15 +380,45 @@ function analyze() {
     }
     run(async () => {
         const data = await request('POST', '/api/analyze', { moodText: text });
+        analyzed = { text, flagged: data.flagged === true };
         showEmotions(data.emotions);
     }, 'Analyzing…');
 }
 
+function renderStrength() {
+    const host = $('strengthButtons');
+    if (!host.children.length) {
+        for (let i = 1; i <= 5; i++) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'strength-btn';
+            b.dataset.value = String(i);
+            b.textContent = String(i);
+            b.setAttribute('aria-label', `Strength ${i} of 5, ${STRENGTH_NAME[i]}`);
+            b.addEventListener('click', () => { strength = strength === i ? null : i; renderStrength(); });
+            host.appendChild(b);
+        }
+    }
+    const locked = selected.length > 0 && selectionKey() === lastSavedKey;
+    host.querySelectorAll('button').forEach((b) => {
+        b.setAttribute('aria-pressed', String(Number(b.dataset.value) === strength));
+        b.disabled = locked;
+    });
+}
+
+function showHint(emotion) {
+    $('emotionHint').textContent = EMOTION_HELP[emotion] ? `${emotion[0].toUpperCase()}${emotion.slice(1)}: ${EMOTION_HELP[emotion]}` : '';
+}
+
 function showEmotions(emotions) {
+    strength = null;
+    $('emotionHint').textContent = 'Tap a word to see what it means.';
     emotionsContainer.replaceChildren();
     selected = [];
     lastSavedKey = null;
     resultsCard.hidden = true;
+    flagNote.hidden = !analyzed.flagged;
+    keepWords.checked = analyzed.flagged;     // ticked for you when the sentence sounded heavy; you can untick it
     if (!emotions || emotions.length === 0) {
         emotionsCard.hidden = true;
         mediaCard.hidden = true;
@@ -310,6 +441,7 @@ function showEmotions(emotions) {
 }
 
 function toggleEmotion(emotion) {
+    showHint(emotion);
     if (selected.includes(emotion)) {
         selected = selected.filter((e) => e !== emotion);
     } else if (selected.length >= MAX_EMOTIONS) {
@@ -330,10 +462,12 @@ function updateSelection() {
         chip.setAttribute('aria-pressed', String(on));
     });
     const alreadySaved = selected.length > 0 && selectionKey() === lastSavedKey;
+    renderStrength();
     saveBtn.disabled = selected.length === 0 || alreadySaved;
     saveBtn.classList.toggle('saved', alreadySaved);
+    newBtn.classList.toggle('primary', alreadySaved);   // after saving, "New check-in" is the natural next step
     saveBtn.textContent = alreadySaved ? 'Saved ✓' : selected.length ? `Save check-in (${selected.length})` : 'Save check-in';
-    mediaCard.hidden = selected.length === 0;
+    mediaCard.hidden = selected.length === 0 || !me.musicEnabled;
     mediaQuestion.textContent = selected.length ? `Songs or albums for ${selected.join(' + ')}?` : '';
 }
 
@@ -341,7 +475,10 @@ function saveCheckIn() {
     if (selected.length === 0) return;
     const emotions = [...selected];
     run(async () => {
-        await request('POST', '/api/checkins', { emotions });
+        const keep = keepWords.checked && analyzed.text;
+        const payload = keep ? { emotions, note: analyzed.text, flagged: analyzed.flagged } : { emotions };
+        if (strength) payload.intensity = strength;
+        await request('POST', '/api/checkins', payload);
         lastSavedKey = [...emotions].sort().join(',');
         reportsStale = true;
         setStatus('Saved to your mood log.');
@@ -349,6 +486,10 @@ function saveCheckIn() {
 }
 
 function chooseMedia(mediaType) {
+    if (!me.musicEnabled) {
+        setStatus('Music suggestions are turned off. Use the Music button to turn them on.', true);
+        return;
+    }
     if (selected.length === 0) {
         setStatus('Select an emotion first.', true);
         return;
@@ -389,6 +530,9 @@ function showResults(items) {
 
 analyzeBtn.addEventListener('click', analyze);
 saveBtn.addEventListener('click', saveCheckIn);
+newBtn.addEventListener('click', newCheckIn);
+newBtn2.addEventListener('click', newCheckIn);
+musicBtn.addEventListener('click', toggleMusic);
 songsBtn.addEventListener('click', () => chooseMedia('SONGS'));
 albumsBtn.addEventListener('click', () => chooseMedia('ALBUMS'));
 
@@ -397,14 +541,19 @@ let reportsStale = true;
 
 function setTab(name) {
     const reports = name === 'reports';
-    tabCheckin.setAttribute('aria-selected', String(!reports));
+    const summary = name === 'summary';
+    tabCheckin.setAttribute('aria-selected', String(!reports && !summary));
     tabReports.setAttribute('aria-selected', String(reports));
-    viewCheckin.hidden = reports;
+    $('tabSummary').setAttribute('aria-selected', String(summary));
+    viewCheckin.hidden = reports || summary;
     viewReports.hidden = !reports;
+    $('viewSummary').hidden = !summary;
     if (reports && reportsStale) loadReport();
+    if (summary) loadSummary();
 }
 tabCheckin.addEventListener('click', () => setTab('checkin'));
 tabReports.addEventListener('click', () => setTab('reports'));
+$('tabSummary').addEventListener('click', () => setTab('summary'));
 
 // ---- reports ---------------------------------------------------------------------------------------------
 const SERIES_SLOT = { positive: 1, negative: 2, neutral: 3, body: 4 };   // fixed order, never cycled
@@ -414,7 +563,7 @@ const GROUP_NAME = { positive: 'Positive', negative: 'Negative', neutral: 'Neutr
 let range = 'week';
 let report = null;
 let tracked = [];                 // [{ code, slot }] - a slot stays with its emotion until it is unselected
-const showingTable = { mood: false, mix: false, track: false };
+const showingTable = { mood: false, intensity: false, mix: false, track: false };
 
 const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; } };
 const parseDay = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -430,8 +579,10 @@ const tickMood = (v) => (v > 0 ? `+${v}` : v < 0 ? `−${Math.abs(v)}` : '0');
 const fmtCount = (v) => String(v ?? 0);
 
 function clearReports() {
-    ['moodChart', 'mixChart', 'trackChart', 'moodTable', 'mixTable', 'trackTable', 'trackPicker', 'topList',
-        'historyList'].forEach((id) => $(id).replaceChildren());
+    ['moodChart', 'intensityChart', 'mixChart', 'trackChart', 'moodTable', 'intensityTable', 'mixTable', 'trackTable',
+        'trackPicker', 'topList', 'historyList', 'summaryBody'].forEach((id) => $(id).replaceChildren());
+    summaryData = null;
+    $('summaryStatus').textContent = '';
     report = null;
     tracked = [];
     reportsStale = true;
@@ -526,6 +677,21 @@ function renderReport(data) {
         },
     };
     drawCard('mood', moodCfg, hasData, message, (host) => lineChart(host, moodCfg));
+
+    // 1b. how strong it felt (only check-ins where a strength was given)
+    const strengthCfg = {
+        labels, titles, ariaLabel: 'Average strength per period, from 1 (barely) to 5 (very strong).',
+        series: [{ name: 'Strength', slot: 1, values: data.buckets.map((b) => b.avgIntensity), fmt: fmtStrength }],
+        y: { min: 1, max: 5, ticks: [1, 2, 3, 4, 5], fmt: (v) => String(v) },
+        points: data.buckets.length <= 7,
+        endLabel: (series) => {
+            const last = [...series.values].reverse().find((v) => v !== null && v !== undefined);
+            return last === undefined ? null : fmtStrength(last);
+        },
+    };
+    const hasStrength = data.buckets.some((b) => b.avgIntensity !== null && b.avgIntensity !== undefined);
+    drawCard('intensity', strengthCfg, hasStrength, hasData ? 'No strength given yet. Pick 1 to 5 when you save a check-in.' : message,
+        (host) => lineChart(host, strengthCfg));
 
     // 2. what you felt, by group
     const mixSeries = MIX_ORDER.map((g) => ({
@@ -680,6 +846,24 @@ function renderHistory(items) {
         emotions.className = 'h-emotions';
         emotions.textContent = item.emotions.join(', ');
         info.append(when, emotions);
+        if (item.intensity) {
+            const st = document.createElement('div');
+            st.className = 'h-strength';
+            st.textContent = `Strength ${item.intensity}/5 (${STRENGTH_NAME[item.intensity]})`;
+            info.appendChild(st);
+        }
+        if (item.note) {
+            const note = document.createElement('div');
+            note.className = 'h-note';
+            note.textContent = item.note;
+            info.appendChild(note);
+        }
+        if (item.flagged) {
+            const flag = document.createElement('div');
+            flag.className = 'h-flag';
+            flag.textContent = '⚑ Sounded heavy';
+            info.appendChild(flag);
+        }
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'link-btn';
@@ -742,3 +926,151 @@ if ('serviceWorker' in navigator) {
 }
 
 start();
+
+// ---- summary for a therapy session ------------------------------------------------------------------------
+async function loadSummary() {
+    const status = $('summaryStatus');
+    status.textContent = 'Loading…';
+    try {
+        summaryData = await request('GET', `/api/summary?tz=${encodeURIComponent(tz())}`);
+        renderSummary(summaryData);
+        status.textContent = '';
+    } catch (e) {
+        handleAuthOr(e, (msg) => { status.textContent = msg; });
+    }
+}
+
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+const dayKey = (iso) => new Date(iso).toLocaleDateString('en-CA');           // yyyy-mm-dd in the viewer's time zone
+const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/** The summary as plain facts, used for both the page and the copied text so they never disagree. */
+function summaryFacts(data) {
+    const r = data.report;
+    const s = r.summary;
+    const change = (s.moodChange === null || s.moodChange === undefined) ? null : Math.round(s.moodChange * 10) / 10;
+    const facts = [
+        ['Check-ins', `${s.checkIns} (${s.previousCheckIns} the week before)`],
+        ['Days with a check-in', `${s.activeDays} of 7`],
+        ['Average mood (−2 low to +2 high)', s.avgMood === null ? 'no scores yet'
+            : `${fmtMood(s.avgMood)}${change === null || change === 0 ? '' : ` (${change > 0 ? 'up' : 'down'} ${Math.abs(change).toFixed(1)} on the week before)`}`],
+    ];
+    if (s.avgIntensity !== null && s.avgIntensity !== undefined) {
+        facts.push(['Average strength (1 barely to 5 very strong)', s.avgIntensity.toFixed(1)]);
+    }
+    const top = r.emotions.slice(0, 5).map((e) => `${cap(e.emotion)} (${plural(e.count, 'time', 'times')}, ${plural(e.days, 'day', 'days')})`);
+    const days = [];
+    data.checkIns.forEach((c) => {
+        const k = dayKey(c.createdAt);
+        let d = days[days.length - 1];
+        if (!d || d.key !== k) {
+            d = { key: k, label: new Date(c.createdAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }), items: [] };
+            days.push(d);
+        }
+        d.items.push(c);
+    });
+    return { facts, top, days, heavy: data.checkIns.filter((c) => c.flagged),
+        title: `Week of ${fmtDM(parseDay(r.from))} to ${fmtDM(parseDay(r.to))}` };
+}
+
+const entryLine = (c) => `${fmtTime(c.createdAt)}  ${c.emotions.map(cap).join(', ')}${c.intensity ? `  (strength ${c.intensity}/5)` : ''}`;
+
+function renderSummary(data) {
+    const f = summaryFacts(data);
+    $('summaryRange').textContent = f.title;
+    $('summaryWho').textContent = `MoodTunes, ${me.name}. ${f.title}. Printed ${new Date().toLocaleDateString()}.`;
+    const body = $('summaryBody');
+    body.replaceChildren();
+    if (data.checkIns.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.textContent = 'No check-ins in the last 7 days yet.';
+        body.appendChild(p);
+        return;
+    }
+    const heading = (text) => { const h = document.createElement('h3'); h.className = 'sum-h'; h.textContent = text; return h; };
+
+    const list = document.createElement('ul');
+    list.className = 'sum-list';
+    f.facts.forEach(([k, v]) => {
+        const li = document.createElement('li');
+        const a = document.createElement('span'); a.textContent = k;
+        const b = document.createElement('span'); b.className = 'v'; b.textContent = v;
+        li.append(a, b);
+        list.appendChild(li);
+    });
+    body.appendChild(list);
+
+    if (f.top.length) {
+        body.appendChild(heading('Most frequent'));
+        const p = document.createElement('p');
+        p.textContent = f.top.join('; ');
+        body.appendChild(p);
+    }
+    if (f.heavy.length) {
+        body.appendChild(heading('Moments that sounded heavy'));
+        const ul = document.createElement('ul');
+        f.heavy.forEach((c) => {
+            const li = document.createElement('li');
+            li.textContent = `${new Date(c.createdAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}, ${fmtTime(c.createdAt)}${c.note ? `: "${c.note}"` : ''}`;
+            ul.appendChild(li);
+        });
+        body.appendChild(ul);
+    }
+    body.appendChild(heading('Check-ins'));
+    f.days.forEach((d) => {
+        const dh = document.createElement('div');
+        dh.className = 'sum-day';
+        dh.textContent = d.label;
+        body.appendChild(dh);
+        d.items.forEach((c) => {
+            const div = document.createElement('div');
+            div.className = 'sum-entry';
+            const t = document.createElement('span'); t.className = 't'; t.textContent = `${fmtTime(c.createdAt)}  `;
+            const e = document.createElement('span'); e.className = 'e'; e.textContent = c.emotions.join(', ');
+            div.append(t, e);
+            if (c.intensity) {
+                const st = document.createElement('span'); st.className = 't'; st.textContent = `  strength ${c.intensity}/5`;
+                div.appendChild(st);
+            }
+            if (c.note) {
+                const q = document.createElement('blockquote'); q.textContent = c.note;
+                div.appendChild(q);
+            }
+            body.appendChild(div);
+        });
+    });
+}
+
+function summaryText(data) {
+    const f = summaryFacts(data);
+    const lines = [`MoodTunes, ${me.name}`, f.title, ''];
+    f.facts.forEach(([k, v]) => lines.push(`${k}: ${v}`));
+    if (f.top.length) lines.push('', `Most frequent: ${f.top.join('; ')}`);
+    if (f.heavy.length) {
+        lines.push('', 'Moments that sounded heavy:');
+        f.heavy.forEach((c) => lines.push(`- ${new Date(c.createdAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} ${fmtTime(c.createdAt)}${c.note ? `: "${c.note}"` : ''}`));
+    }
+    lines.push('', 'Check-ins:');
+    f.days.forEach((d) => {
+        lines.push(d.label);
+        d.items.forEach((c) => {
+            lines.push(`  ${entryLine(c)}`);
+            if (c.note) lines.push(`    "${c.note}"`);
+        });
+    });
+    return lines.join('\n');
+}
+
+$('printBtn').addEventListener('click', () => window.print());
+$('copyBtn').addEventListener('click', async () => {
+    const status = $('summaryStatus');
+    if (!summaryData) return;
+    try {
+        await navigator.clipboard.writeText(summaryText(summaryData));
+        status.textContent = 'Copied. Paste it into a message or note.';
+    } catch {
+        status.textContent = 'Copying is not allowed here. Use Print / save as PDF instead.';
+    }
+});

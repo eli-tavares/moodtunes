@@ -44,6 +44,19 @@ public enum Emotion {
 
     public static final int MAX_PER_CHECK_IN = 3;
 
+    /**
+     * "good", "low" or "mixed", worked out from the mood scores (body states have none). Used to tell the music
+     * prompt whether to match the mood or to meet it and ease it, so the model never has to judge that itself.
+     */
+    public static String tone(java.util.Collection<Emotion> emotions) {
+        boolean positive = emotions.stream().anyMatch(e -> e.valence != null && e.valence > 0);
+        boolean negative = emotions.stream().anyMatch(e -> e.valence != null && e.valence < 0);
+        if (positive && negative) {
+            return "mixed";
+        }
+        return negative ? "low" : "good";
+    }
+
     private final Group group;
     private final Integer valence;
 

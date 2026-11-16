@@ -2,6 +2,7 @@ package com.tavares.recommender.report;
 
 import com.tavares.recommender.checkin.CheckIn;
 import com.tavares.recommender.checkin.CheckInRepository;
+import com.tavares.recommender.checkin.CheckInResponse;
 import com.tavares.recommender.checkin.Emotion;
 import com.tavares.recommender.report.ReportResponse.Bucket;
 import com.tavares.recommender.report.ReportResponse.EmotionStat;
@@ -37,14 +38,14 @@ public class ReportService {
         this.clock = clock;
     }
 
-    public ReportResponse report(ReportRange range, ZoneId zone) {
+    public ReportResponse report(long userId, ReportRange range, ZoneId zone) {
         LocalDate today = LocalDate.now(clock.withZone(zone));
         LocalDate from = today.minusDays(range.days() - 1L);
         LocalDate previousFrom = from.minusDays(range.days());
 
         Instant start = previousFrom.atStartOfDay(zone).toInstant();
         Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
-        List<CheckIn> all = repository.findBetween(start, end);
+        List<CheckIn> all = repository.findBetween(userId, start, end);
 
         List<CheckIn> current = new ArrayList<>();
         List<CheckIn> previous = new ArrayList<>();
@@ -56,6 +57,18 @@ public class ReportService {
             summary(current, previous, zone), buckets(current, range, from, zone), emotionStats(current, zone));
     }
 
+    /**
+     * Everything for a therapy session in one go: the last-7-days report plus every check-in in that window, oldest
+     * first, with the person's kept words and the "sounded heavy" markers.
+     */
+    public SessionSummary sessionSummary(long userId, ZoneId zone) {
+        ReportResponse week = report(userId, ReportRange.WEEK, zone);
+        Instant start = week.from().atStartOfDay(zone).toInstant();
+        Instant end = week.to().plusDays(1).atStartOfDay(zone).toInstant();
+        return new SessionSummary(week, repository.findBetween(userId, start, end).stream()
+            .map(CheckInResponse::from).toList());
+    }
+
     private static LocalDate localDate(CheckIn checkIn, ZoneId zone) {
         return checkIn.createdAt().atZone(zone).toLocalDate();
     }
@@ -63,6 +76,11 @@ public class ReportService {
     private static Double averageMood(List<CheckIn> checkIns) {
         return checkIns.stream().map(CheckIn::mood).filter(m -> m != null)
             .mapToDouble(Double::doubleValue).average().stream().boxed().findFirst().orElse(null);
+    }
+
+    private static Double averageIntensity(List<CheckIn> checkIns) {
+        return checkIns.stream().map(CheckIn::intensity).filter(i -> i != null)
+            .mapToInt(Integer::intValue).average().stream().boxed().findFirst().orElse(null);
     }
 
     /** Rounded to 2 decimals so the JSON is tidy and tests are stable. */
@@ -77,7 +95,7 @@ public class ReportService {
         Double previousAvg = averageMood(previous);
         Double change = avg != null && previousAvg != null ? avg - previousAvg : null;
         return new Summary(current.size(), days.size(), round(avg), previous.size(), round(previousAvg),
-            round(change));
+            round(change), round(averageIntensity(current)), round(averageIntensity(previous)));
     }
 
     private List<Bucket> buckets(List<CheckIn> current, ReportRange range, LocalDate from, ZoneId zone) {
@@ -108,7 +126,7 @@ public class ReportService {
                 }
             }
             result.add(new Bucket(bucketStart, bucketStart.plusDays(range.bucketDays() - 1L), items.size(),
-                round(averageMood(items)), groups, emotions));
+                round(averageMood(items)), round(averageIntensity(items)), groups, emotions));
         }
         return result;
     }

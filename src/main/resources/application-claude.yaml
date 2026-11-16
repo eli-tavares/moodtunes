@@ -8,4 +8,4 @@ spring:
         options:
           model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
           # Spring AI's default (500) can truncate a list of recommendations.
-          max-tokens: 1024
+          max-tokens: 4096
