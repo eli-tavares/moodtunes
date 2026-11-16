@@ -1,0 +1,12 @@
+# Activate with: SPRING_PROFILES_ACTIVE=claude   (needs ANTHROPIC_API_KEY)
+spring:
+  ai:
+    model:
+      chat: anthropic
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        options:
+          model: ${ANTHROPIC_MODEL:claude-haiku-5-5}
+          # Spring AI's default (500) can truncate a list of recommendations.
+          max-tokens: 1024

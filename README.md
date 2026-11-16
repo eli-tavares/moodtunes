@@ -14,163 +14,140 @@ Whether you’re feeling on top of the world or a bit lost in your thoughts, the
 
 # 🎵 MoodTunes
 
-A **Spring Boot** web application that uses **Spring AI (ChatGPT)** to suggest music albums based on a user’s text prompt.  
-The app provides a simple web interface where users can enter a mood, genre, or activity (e.g., “chill evening” or “energetic workout”), and receive a list of recommended albums.
-
-It also uses **Spring Caching (Caffeine)** to cache AI responses for faster repeated queries.
+A **Spring Boot** app that uses **Spring AI (OpenAI)** to recommend songs or albums based on how you feel. It ships a
+small mobile-first web UI that is also an installable **PWA**, so it can live on your iPhone home screen.
 
 ---
 
-## 🧑‍💻 How to Run
+## 🚀 Run it
 
-### Prerequisites
+**Prerequisites:** Java 21+, Maven 3.9+ (or use Docker), and an API key for OpenAI **or** Anthropic (Claude).
 
-- **Java 17+**
-- **Maven 3.8+**
-- **OpenAI API key**
+```bash
+export OPENAI_API_KEY=sk-...
+mvn spring-boot:run          # http://localhost:8080
+```
 
-### Steps
+Docker:
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/adheli/hackathon-ai.git
-   cd hackathon-ai
-   ```
+```bash
+docker compose up --build    # needs OPENAI_API_KEY in your environment
+```
 
-2. **Build the project**
-   ```bash
-   mvn clean package
-   ```
+### Configuration
 
-3. **Run the application**
-   ```bash
-   mvn spring-boot:run
-   ```
-   or
-   ```bash
-   java -jar target/recommender-0.0.1-SNAPSHOT.jar
-   ```
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | Your OpenAI key (default provider). |
+| `SPRING_PROFILES_ACTIVE=claude` | Use Claude instead of OpenAI (see "Choosing the AI provider"). |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key (only with the `claude` profile). |
+| `ANTHROPIC_MODEL` | Claude model (default `claude-haiku-5-5`). |
+| `APP_ACCESS_TOKEN` | Optional shared secret. If set, every `/api` call must send it in the `X-Access-Token` header. The web UI asks for it once and stores it on the device. **Set this whenever the app is reachable from the internet** - otherwise anyone with the URL can spend your OpenAI credit. |
+| `OPENAI_MODEL` | Model to use (default `gpt-6-luna`). See "Keeping AI cost low". |
+| `PORT` | HTTP port (default 8080). |
 
-4. **Call the stateless JSON API**
-
-   The backend exposes REST endpoints rather than serving a web UI:
-
-   - `POST http://localhost:8080/api/analyze` with body `{ "moodText": "..." }` returns a list of suggested emotions.
-   - `POST http://localhost:8080/api/recommend` with body `{ "emotion": "...", "mediaType": "SONGS|ALBUMS" }` returns recommendations.
-
-   You can connect any frontend or API client (e.g., Postman, curl, or an SPA) to these endpoints.
+Rate limits (per client and global, per minute) are under `app.rate-limit.*` in `application.yaml`.
 
 ---
 
-## 🧪 Running Tests
+## 🔀 Choosing the AI provider
 
-Run the automated test suite with:
+The app talks to Spring AI's provider-neutral `ChatClient`, so the provider is just configuration:
+
+```bash
+# OpenAI (default)
+export OPENAI_API_KEY=sk-...
+mvn spring-boot:run
+
+# Claude
+export ANTHROPIC_API_KEY=sk-ant-...
+SPRING_PROFILES_ACTIVE=claude mvn spring-boot:run
+```
+
+Only the selected provider's key is needed. Note that an Anthropic **API key** is separate from a claude.ai
+subscription (Pro/Max): create one in the Anthropic Console, where API usage is billed by tokens.
+To add another provider (Gemini, Mistral, Ollama, ...), add its `spring-ai-starter-model-*` dependency, a small
+`application-<name>.yaml` that sets `spring.ai.model.chat` plus its key/model, and run with that profile.
+
+---
+
+## 💸 Keeping AI cost low
+
+- Default model is `gpt-6-luna` ($0.10 / 1M input tokens, $0.50 / 1M output - cheaper than the `gpt-4o-mini` it replaces,
+  which OpenAI shuts down on 2027-01-14). Prices change; check the
+  [OpenAI pricing page](https://developers.openai.com/api/docs/pricing) and override with `OPENAI_MODEL` if needed.
+- `claude-haiku-5-5` is priced the same ($0.10 / $0.50 per 1M tokens, see the
+  [Claude pricing page](https://platform.claude.com/docs/en/about-claude/pricing)), so choose by answer quality.
+- Recommendations are cached for 12 hours per emotion + songs/albums, so repeat picks cost nothing.
+- Requests are tiny (a short mood sentence in, a short list out), the OpenAI call fails fast (30s timeout, 2 attempts)
+  and the global rate limit (`app.rate-limit.global-per-minute`) caps the worst case.
+- Also set a monthly spending limit in your OpenAI account as a final safety net.
+
+---
+
+## 📱 Use it on your iPhone
+
+The app is a Progressive Web App. iOS requires **HTTPS** for installable web apps, so it has to be hosted somewhere your
+phone can reach over HTTPS (a cloud host, or your own machine exposed privately, e.g. with Tailscale).
+
+1. Deploy it (see Docker above) and open the HTTPS URL in **Safari** on the iPhone.
+2. Tap **Share → Add to Home Screen**.
+3. Launch **MoodTunes** from the home screen - it opens full screen like a native app.
+4. If you set `APP_ACCESS_TOKEN`, enter it when prompted (once per device).
+
+The app shell is cached by a service worker so it opens instantly and shows a friendly message when offline;
+recommendations always need a connection because they come from the AI.
+
+---
+
+## 🔌 API
+
+Stateless JSON API (errors are [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) `application/problem+json`):
+
+- `POST /api/analyze` - `{ "moodText": "..." }` (max 500 chars) -> `{ "emotions": ["joy", ...] }`
+- `POST /api/recommend` - `{ "emotion": "joy", "mediaType": "SONGS|ALBUMS" }` ->
+  `{ "items": [{ "title": "...", "artist": "...", "description": "..." }] }`
+- `GET /actuator/health` - liveness/readiness for hosting platforms
+
+Status codes: `400` invalid input, `401` missing/wrong access token, `413` body too large, `429` rate limited,
+`502` the AI failed or answered with something unusable (never cached, so a retry works).
+
+---
+
+## 🛡️ Security notes
+
+- Runs on Spring Boot 4 / Spring AI 2 with no known vulnerabilities at the time of writing. Re-check any time with
+  [Trivy](https://trivy.dev): `trivy fs .`
+- Input is validated and length-limited; model output is treated as untrusted and sanitised before reaching the browser.
+- Strict CSP and other security headers on every response; no third-party scripts, styles or fonts.
+- Upstream/AI error details are logged server-side only and never returned to clients.
+- Container runs as a non-root user.
+
+---
+
+## 🧪 Tests
 
 ```bash
 mvn test
 ```
 
-### Test Coverage
-
-| Test Class | Purpose |
-|-------------|----------|
-| `ApiControllerTest` | Verifies JSON endpoints and happy‑path responses |
-| `MusicServiceIntegrationTest` | Confirms Spring AI prompt/response flow for recommendations |
-| `MoodAnalysisIntegrationTest` | Confirms Spring AI prompt/response flow for emotion extraction |
+Covers the API contract and validation, auth/rate limiting, error handling, AI-output parsing/sanitising and caching.
+No OpenAI key is needed - the AI client is mocked.
 
 ---
 
-## 🧠 How It Works
+## 🧠 How it works
 
-1. The user enters a **prompt** that describes how they're feeling in the web interface.
-2. The `ApiController` receives the request and delegates to `MoodAnalysisService`.
-3. The service builds a structured prompt for ChatGPT
-4. The prompt is processed by **Spring AI’s ChatClient**, which calls **OpenAI’s GPT model**.
-5. The user selects from the short list of emotions returned, and picks from songs or albums
-6. The `ApiController` forwards the user’s selection to the `MusicService`.
-7. The generated list of albums or songs is returned to the web page.
-8. The response is **cached** (via Caffeine) for faster reuse on similar prompts.
-
----
-
-## 💾 Caching Behavior
-
-- Uses **Spring Cache** backed by **Caffeine**
-- Cache key: `emotion + "_" + mediaType` (e.g., `joy_ALBUMS`)
-- Expiration: **10 minutes**
-- Maximum entries: **100**
-
-Example YAML configuration:
-
-```yaml
-spring:
-  cache:
-    type: caffeine
-    cache-names: musicRecommendations
-    caffeine:
-      spec: maximumSize=100,expireAfterWrite=10m
-```
-
----
-
-## 🚨 Error Handling
-
-If something goes wrong (e.g., the AI API fails), users see a friendly **Thymeleaf error page** instead of a raw error message.
-
-- Template: [`error.html`](src/main/resources/templates/error.html)
-- Handled by a custom exception handler in the controller layer.
-
----
-
-## 🧱 Extending the App
-
-You can expand this app by:
-
-- Adding artist or genre filters in `MusicService`
-- Supporting different AI models (e.g., `gpt-4o`, `gpt-4-turbo`)
-- Logging AI responses for analytics
-- Providing a public REST API endpoint
+1. The UI sends your mood text to `/api/analyze`; `MoodAnalysisService` asks the model for a handful of emotions.
+2. You pick an emotion and songs/albums; the UI calls `/api/recommend`.
+3. `MusicService` asks the model for a JSON list, parses and validates it, and caches the parsed result
+   (Caffeine, key `emotion_mediaType`, 12 h, max 500 entries).
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.  
-See the [LICENSE](LICENSE) file for details.
+MIT - see [LICENSE](LICENSE). App icon: Twemoji 🎶 (CC-BY 4.0), see `static/favicon/about.txt`.
 
----
-
-## 🙌 Credits
-
-Built with ❤️ using:
-
-- [Spring Boot](https://spring.io/projects/spring-boot)
-- [Spring AI](https://docs.spring.io/spring-ai/)
-- [Caffeine Cache](https://github.com/ben-manes/caffeine)
-- [Thymeleaf](https://www.thymeleaf.org/)
-
-
-## Docker
-
-Build and run with Docker:
-
-```bash
-docker build -t ai-music-recommender:latest .
-docker run -e OPENAI_API_KEY="${OPENAI_API_KEY}" -p 8080:8080 ai-music-recommender:latest
-```
-
-Or with docker-compose:
-
-```bash
-docker-compose up --build
-```
-
-
-## Stateless API flow (for SPA compatibility)
-
-This project exposes a stateless JSON API:
-
-- `POST /api/analyze` — accepts `{ "moodText": "..." }` and returns `{ "emotions": [...] }`
-- `POST /api/recommend` — accepts `{ "moodText":"...", "emotion":"...", "mediaType":"SONGS|ALBUMS" }` and returns `{ "items":[...], "raw":"..." }`
-
-Frontend (Thymeleaf or SPA) sends the mood text and chosen emotion/mediaType — backend keeps no session state.
+Built with [Spring Boot](https://spring.io/projects/spring-boot), [Spring AI](https://docs.spring.io/spring-ai/)
+and [Caffeine](https://github.com/ben-manes/caffeine).

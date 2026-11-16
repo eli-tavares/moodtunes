@@ -1,125 +1,210 @@
-const analyzeBtn = document.getElementById('analyzeBtn');
-const moodText = document.getElementById('moodText');
-const emotionsCard = document.getElementById('emotionsCard');
-const emotionsContainer = document.getElementById('emotionsContainer');
-const mediaCard = document.getElementById('mediaCard');
-const mediaQuestion = document.getElementById('mediaQuestion');
-const resultsCard = document.getElementById('resultsCard');
-const resultsList = document.getElementById('resultsList');
-const rawOutput = document.getElementById('rawOutput');
-const status = document.getElementById('status');
+'use strict';
+
+const TOKEN_KEY = 'moodtunes.accessToken';
+const REQUEST_TIMEOUT_MS = 45000;
+
+const $ = (id) => document.getElementById(id);
+const moodText = $('moodText');
+const analyzeBtn = $('analyzeBtn');
+const emotionsCard = $('emotionsCard');
+const emotionsContainer = $('emotionsContainer');
+const mediaCard = $('mediaCard');
+const mediaQuestion = $('mediaQuestion');
+const songsBtn = $('songsBtn');
+const albumsBtn = $('albumsBtn');
+const resultsCard = $('resultsCard');
+const resultsList = $('resultsList');
+const tokenCard = $('tokenCard');
+const tokenInput = $('tokenInput');
+const statusEl = $('status');
 
 let selectedEmotion = null;
+let pendingRetry = null; // action to re-run after the user enters an access code
 
-function setStatus(msg, cls = 'text-muted') {
-    status.className = cls;
-    status.textContent = msg;
+// localStorage can throw (private mode, blocked storage) - the app must work without it.
+function readToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+}
+function saveToken(value) {
+    try { localStorage.setItem(TOKEN_KEY, value); } catch { /* ignore */ }
 }
 
-analyzeBtn.addEventListener('click', async () => {
+function setStatus(message, isError = false) {
+    statusEl.textContent = message;
+    statusEl.classList.toggle('error', isError);
+}
+
+function setBusy(busy) {
+    [analyzeBtn, songsBtn, albumsBtn].forEach((b) => { b.disabled = busy; });
+    emotionsContainer.querySelectorAll('button').forEach((b) => { b.disabled = busy; });
+}
+
+class ApiError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.status = status;
+    }
+}
+
+async function api(path, payload) {
+    if (!navigator.onLine) {
+        throw new ApiError("You're offline. Reconnect and try again.", 0);
+    }
+    const headers = { 'Content-Type': 'application/json' };
+    const token = readToken();
+    if (token) headers['X-Access-Token'] = token;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+        const resp = await fetch(path, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
+        let body = null;
+        try { body = await resp.json(); } catch { /* non-JSON error body */ }
+        if (!resp.ok) {
+            const detail = body && (body.detail || body.title);
+            throw new ApiError(detail || `Request failed (${resp.status}).`, resp.status);
+        }
+        return body;
+    } catch (e) {
+        if (e.name === 'AbortError') throw new ApiError('The request timed out. Please try again.', 0);
+        if (e instanceof ApiError) throw e;
+        throw new ApiError("Couldn't reach the server. Check your connection.", 0);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Runs an API action with busy/status handling and the access-code prompt on 401.
+async function run(action, busyMessage) {
+    setBusy(true);
+    setStatus(busyMessage);
+    try {
+        await action();
+        tokenCard.hidden = true;
+    } catch (e) {
+        if (e.status === 401) {
+            pendingRetry = () => run(action, busyMessage);
+            tokenCard.hidden = false;
+            tokenInput.focus();
+            setStatus(readToken() ? 'That access code was not accepted.' : 'Please enter your access code.', true);
+        } else {
+            setStatus(e.message, true);
+        }
+    } finally {
+        setBusy(false);
+    }
+}
+
+function analyze() {
     const text = moodText.value.trim();
     if (!text) {
-        setStatus('Please enter your mood description.', 'text-danger');
+        setStatus('Please describe your mood first.', true);
+        moodText.focus();
         return;
     }
-    setStatus('Analyzing...', 'text-muted');
-    try {
-        const resp = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({moodText: text})
-        });
-        if (!resp.ok) throw new Error('Network response not ok');
-        const data = await resp.json();
+    run(async () => {
+        const data = await api('/api/analyze', { moodText: text });
         showEmotions(data.emotions);
-        setStatus('Select an emotion.');
-    } catch (e) {
-        console.error(e);
-        setStatus('Error analyzing mood.', 'text-danger');
+    }, 'Analyzing…');
+}
+
+function showEmotions(emotions) {
+    emotionsContainer.replaceChildren();
+    selectedEmotion = null;
+    mediaCard.hidden = true;
+    resultsCard.hidden = true;
+    if (!emotions || emotions.length === 0) {
+        emotionsCard.hidden = true;
+        setStatus('No emotions detected. Try describing it differently.', true);
+        return;
+    }
+    emotions.forEach((em) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'chip';
+        btn.textContent = em;
+        btn.addEventListener('click', () => selectEmotion(em, btn));
+        emotionsContainer.appendChild(btn);
+    });
+    emotionsCard.hidden = false;
+    setStatus('Select the emotion that fits.');
+}
+
+function selectEmotion(emotion, button) {
+    selectedEmotion = emotion;
+    emotionsContainer.querySelectorAll('.chip').forEach((c) => {
+        c.classList.toggle('selected', c === button);
+        c.setAttribute('aria-pressed', String(c === button));
+    });
+    mediaQuestion.textContent = `Songs or albums for "${emotion}"?`;
+    mediaCard.hidden = false;
+    resultsCard.hidden = true;
+    setStatus('');
+}
+
+function chooseMedia(mediaType) {
+    if (!selectedEmotion) {
+        setStatus('Select an emotion first.', true);
+        return;
+    }
+    const emotion = selectedEmotion;
+    run(async () => {
+        const data = await api('/api/recommend', { emotion, mediaType });
+        showResults(data.items);
+        setStatus('');
+    }, 'Finding music…');
+}
+
+function showResults(items) {
+    resultsList.replaceChildren();
+    if (!items || items.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = 'No recommendations this time. Try again.';
+        resultsList.appendChild(li);
+    } else {
+        items.forEach((it) => {
+            const li = document.createElement('li');
+            const title = document.createElement('div');
+            title.className = 'title';
+            title.textContent = it.title || '';
+            const artist = document.createElement('div');
+            artist.className = 'artist';
+            artist.textContent = it.artist || '';
+            const desc = document.createElement('div');
+            desc.className = 'desc';
+            desc.textContent = it.description || '';
+            li.append(title, artist, desc);
+            resultsList.appendChild(li);
+        });
+    }
+    resultsCard.hidden = false;
+    resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+analyzeBtn.addEventListener('click', analyze);
+songsBtn.addEventListener('click', () => chooseMedia('SONGS'));
+albumsBtn.addEventListener('click', () => chooseMedia('ALBUMS'));
+$('tokenSaveBtn').addEventListener('click', () => {
+    const value = tokenInput.value.trim();
+    if (!value) return;
+    saveToken(value);
+    tokenInput.value = '';
+    tokenCard.hidden = true;
+    if (pendingRetry) {
+        const retry = pendingRetry;
+        pendingRetry = null;
+        retry();
     }
 });
 
-function showEmotions(emotions) {
-    emotionsContainer.innerHTML = '';
-    if (!emotions || emotions.length === 0) {
-        setStatus('No emotions detected.', 'text-warning');
-        return;
-    }
-    emotionsCard.classList.remove('d-none');
-    mediaCard.classList.add('d-none');
-    resultsCard.classList.add('d-none');
-    selectedEmotion = null;
-    emotions.forEach(em => {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-outline-secondary emotion-btn';
-        btn.textContent = em;
-        btn.dataset.emotion = em;
-        btn.addEventListener('click', onEmotionClick);
-        emotionsContainer.appendChild(btn);
+// Offline support / installability
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('Service worker failed', e));
     });
-}
-
-function onEmotionClick(e) {
-    const em = e.currentTarget.dataset.emotion;
-    selectedEmotion = em;
-    Array.from(emotionsContainer.children).forEach(b => {
-        b.classList.remove('btn-primary');
-        b.classList.add('btn-outline-secondary');
-    });
-    e.currentTarget.classList.remove('btn-outline-secondary');
-    e.currentTarget.classList.add('btn-primary');
-    mediaQuestion.textContent = `Would you like songs or albums related to "${em}"?`;
-    mediaCard.classList.remove('d-none');
-    resultsCard.classList.add('d-none');
-    rawOutput.classList.add('d-none');
-    setStatus('Select a media type to get recommendations.', 'text-muted');
-}
-
-document.getElementById('songsBtn').addEventListener('click', () => chooseMedia('SONGS'));
-document.getElementById('albumsBtn').addEventListener('click', () => chooseMedia('ALBUMS'));
-
-async function chooseMedia(type) {
-    if (!selectedEmotion) {
-        setStatus('Select an emotion first.', 'text-danger');
-        return;
-    }
-    setStatus('Fetching recommendations...', 'text-muted');
-    try {
-        const resp = await fetch('/api/recommend', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                moodText: moodText.value.trim(),
-                emotion: selectedEmotion,
-                mediaType: type
-            })
-        });
-        if (!resp.ok) throw new Error('Network response not ok');
-        const data = await resp.json();
-        showResults(data.items, data.raw);
-        setStatus('');
-    } catch (e) {
-        console.error(e);
-        setStatus('Error getting recommendations.', 'text-danger');
-    }
-}
-
-function showResults(items, raw) {
-    resultsList.innerHTML = '';
-    if (items && items.length > 0) {
-        items.forEach(it => {
-            const li = document.createElement('li');
-            li.className = 'list-group-item';
-            li.textContent = it.title + " by " + it.artist + " - " + it.description;
-            resultsList.appendChild(li);
-        });
-    } else {
-        const li = document.createElement('li');
-        li.className = 'list-group-item';
-        li.textContent = 'No recommendations.';
-        resultsList.appendChild(li);
-    }
-    resultsCard.classList.remove('d-none');
-    rawOutput.textContent = raw || '';
-    rawOutput.classList.remove('d-none');
 }

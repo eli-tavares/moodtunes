@@ -1,5 +1,5 @@
 # Build stage
-FROM maven:3.8.8-eclipse-temurin-17 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
@@ -7,9 +7,12 @@ COPY src ./src
 RUN mvn -B -q -DskipTests package
 
 # Run stage
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
+RUN groupadd --system app && useradd --system --gid app --no-create-home app
 WORKDIR /app
-ARG JAR_FILE=target/*.jar
-COPY --from=build /workspace/${JAR_FILE} app.jar
+COPY --from=build /workspace/target/*.jar app.jar
+USER app
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${PORT:-8080} && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

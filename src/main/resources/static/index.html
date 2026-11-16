@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>MoodTunes</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="description" content="Discover songs and albums that match how you feel.">
+    <meta name="theme-color" content="#1e293b">
+
+    <!-- Installable app (Android/desktop via the manifest, iPhone via the apple-* tags) -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="MoodTunes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+    <link rel="icon" href="/favicon/favicon.ico">
+
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="app">
+    <header>
+        <h1>🎶 MoodTunes</h1>
+        <p class="tagline">Tell me how you feel, pick the emotion that fits, and get song or album
+            recommendations tailored to your vibe.</p>
+    </header>
+
+    <section class="card" aria-labelledby="moodLabel">
+        <label id="moodLabel" for="moodText">How are you feeling?</label>
+        <textarea id="moodText" rows="4" maxlength="500" autocomplete="off"
+                  placeholder="A few sentences about your mood…"></textarea>
+        <button id="analyzeBtn" class="btn primary" type="button">Analyze</button>
+    </section>
+
+    <section id="emotionsCard" class="card" hidden aria-labelledby="emotionsTitle">
+        <h2 id="emotionsTitle">Possible emotions</h2>
+        <div id="emotionsContainer" class="chips" role="group" aria-label="Emotions"></div>
+    </section>
+
+    <section id="mediaCard" class="card" hidden aria-labelledby="mediaQuestion">
+        <h2 id="mediaQuestion"></h2>
+        <div class="row">
+            <button id="songsBtn" class="btn" type="button">Songs</button>
+            <button id="albumsBtn" class="btn" type="button">Albums</button>
+        </div>
+    </section>
+
+    <section id="resultsCard" class="card" hidden aria-labelledby="resultsTitle">
+        <h2 id="resultsTitle">Recommendations</h2>
+        <ul id="resultsList" class="results"></ul>
+    </section>
+
+    <section id="tokenCard" class="card" hidden aria-labelledby="tokenTitle">
+        <h2 id="tokenTitle">Access code needed</h2>
+        <p class="muted">This app is private. Enter your access code once; it is stored only on this device.</p>
+        <label for="tokenInput" class="sr-only">Access code</label>
+        <input id="tokenInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="Access code">
+        <button id="tokenSaveBtn" class="btn primary" type="button">Save</button>
+    </section>
+
+    <p id="status" role="status" aria-live="polite"></p>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

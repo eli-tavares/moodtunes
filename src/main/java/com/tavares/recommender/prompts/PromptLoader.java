@@ -1,25 +1,25 @@
-
 package com.tavares.recommender.prompts;
 
 import java.io.IOException;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.ClassPathResource;
 
-@Data
-@AllArgsConstructor
+/** Loads a system prompt from {@code classpath:prompts/<file>}, falling back to a built-in default. */
 public class PromptLoader {
 
-    private String filePrompt;
-    private String defaultSystemPrompt;
+    private final String filePrompt;
+    private final String defaultSystemPrompt;
+
+    public PromptLoader(String filePrompt, String defaultSystemPrompt) {
+        this.filePrompt = filePrompt;
+        this.defaultSystemPrompt = defaultSystemPrompt;
+    }
 
     public String loadPromptAsString() {
-        try {
-            return new String(
-                new ClassPathResource("prompts/" + this.filePrompt).getInputStream().readAllBytes()
-            );
+        try (var in = new ClassPathResource("prompts/" + filePrompt).getInputStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            return this.defaultSystemPrompt;
+            return defaultSystemPrompt;
         }
     }
 }

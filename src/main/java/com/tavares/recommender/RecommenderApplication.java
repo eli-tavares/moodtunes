@@ -2,10 +2,11 @@ package com.tavares.recommender;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cache.annotation.EnableCaching;
+import com.tavares.recommender.config.AppProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableCaching
+@EnableConfigurationProperties(AppProperties.class)
 public class RecommenderApplication {
     public static void main(String[] args) {
         SpringApplication.run(RecommenderApplication.class, args);

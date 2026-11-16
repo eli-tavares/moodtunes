@@ -2,24 +2,71 @@ spring:
   application:
     name: recommender
   ai:
+    model:
+      # Which provider answers chat requests: openai (default) or anthropic (profile "claude").
+      # Both starters are on the classpath; only the selected one is activated.
+      chat: openai
+      # This app only does chat; don't spin up unused embedding/image/audio/moderation clients.
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
     openai:
       api-key: ${OPENAI_API_KEY}
       chat:
         options:
-          model: gpt-4o-mini
+          model: ${OPENAI_MODEL:gpt-6-luna}
+    retry:
+      # Spring AI defaults to 10 attempts with multi-minute backoff, which would leave a phone user staring
+      # at a spinner. Fail fast instead; the UI offers "try again".
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 5s
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 30s
   cache:
     type: caffeine
-    cache-names: musicRecommendations, oldMusicRecommendations
+    cache-names: musicRecommendations
     caffeine:
-      spec: maximumSize=100,expireAfterWrite=10m
+      spec: maximumSize=500,expireAfterWrite=12h
   mvc:
-    static-path-pattern: /static/**
+    problemdetails:
+      enabled: true   # RFC 7807 JSON bodies for framework errors (400, 415, ...)
+
 server:
-  port: 8080
+  port: ${PORT:8080}
+  shutdown: graceful
+  # Honour X-Forwarded-* from a trusted reverse proxy (Tomcat only trusts private-range proxies by default),
+  # so rate limiting sees the real client IP when deployed behind a proxy/load balancer.
+  forward-headers-strategy: native
   error:
     whitelabel:
-      enabled: false  # Disable the default ugly Whitelabel page
-    include-message: always
-    include-binding-errors: always
-  servlet:
-    context-path: /
+      enabled: false
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  # Optional shared secret. When set, every /api request must send it in the X-Access-Token header.
+  # Strongly recommended whenever the app is reachable from the internet.
+  access-token: ${APP_ACCESS_TOKEN:}
+  rate-limit:
+    per-client-per-minute: 20
+    global-per-minute: 120

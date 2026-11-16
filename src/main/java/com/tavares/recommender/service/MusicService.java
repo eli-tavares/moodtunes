@@ -1,44 +1,73 @@
-
 package com.tavares.recommender.service;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.tavares.recommender.config.ChatClientAdapter;
+import com.tavares.recommender.dtos.MusicRecommendation;
 import com.tavares.recommender.prompts.PromptLoader;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.List;
+import java.util.Locale;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MusicService {
 
-    private final ChatClientAdapter chatAdapter;
     private static final String SYSTEM_PROMPT_FILE = "music-prompt.json";
+    private static final int MAX_ITEMS = 10;
 
-    @Autowired
-    public MusicService(ChatClientAdapter chatAdapter) {
+    private final ChatClientAdapter chatAdapter;
+    private final ObjectMapper objectMapper;
+    private final String systemPrompt;
+
+    public MusicService(ChatClientAdapter chatAdapter, ObjectMapper objectMapper) {
         this.chatAdapter = chatAdapter;
+        this.objectMapper = objectMapper;
+        this.systemPrompt = loadSystemPrompt();
     }
 
-    @Cacheable(value = "musicRecommendations", key = "#emotion + '_' + #type")
-    public String recommend(String emotion, MusicType type) {
-
-        String systemMessage = loadSystemPrompt();
-
-        String mediaType = type.getString();
-        String userPrompt = "Emotion: " + emotion + "\nType: " + mediaType;
-
-        return chatAdapter.call(systemMessage, userPrompt);
+    /**
+     * Returns recommendations for an emotion. The <em>parsed</em> list is cached (case-insensitively), so a
+     * malformed model answer is never cached: it raises {@link AiResponseException} and the next call retries.
+     */
+    @Cacheable(value = "musicRecommendations", key = "#emotion.trim().toLowerCase() + '_' + #type")
+    public List<MusicRecommendation> recommend(String emotion, MusicType type) {
+        String normalizedEmotion = emotion.trim().toLowerCase(Locale.ROOT);
+        String userPrompt = "Emotion: " + normalizedEmotion + "\nType: " + type.getString();
+        return parse(chatAdapter.call(systemPrompt, userPrompt));
     }
 
-    private String loadSystemPrompt() {
-        String systemPrompt = """
+    List<MusicRecommendation> parse(String modelOutput) {
+        // Models like to wrap JSON in markdown fences or add a sentence around it; take the outermost array.
+        int start = modelOutput.indexOf('[');
+        int end = modelOutput.lastIndexOf(']');
+        if (start < 0 || end <= start) {
+            throw new AiResponseException("The AI service returned an unreadable answer.");
+        }
+        try {
+            List<MusicRecommendation> items = objectMapper.readValue(
+                modelOutput.substring(start, end + 1), new TypeReference<List<MusicRecommendation>>() {
+                });
+            List<MusicRecommendation> valid = items.stream()
+                .filter(i -> i != null && i.getTitle() != null && !i.getTitle().isBlank())
+                .limit(MAX_ITEMS)
+                .toList();
+            if (valid.isEmpty()) {
+                throw new AiResponseException("The AI service returned no recommendations.");
+            }
+            return valid;
+        } catch (JacksonException e) {
+            throw new AiResponseException("The AI service returned an unreadable answer.", e);
+        }
+    }
+
+    private static String loadSystemPrompt() {
+        String fallback = """
             You are a helpful music recommendation assistant.
-            Based on the user's input, suggest 5 music albums that fit their mood or interest.
-            Format the output as a numbered list with album name and artist.
-            Be concise but descriptive.
+            Suggest 5 songs or albums that fit the user's emotion.
+            Return ONLY a JSON array of objects with "title", "artist" and "description" properties.
             """;
-
-        var loader = new PromptLoader(SYSTEM_PROMPT_FILE, systemPrompt);
-
-        return loader.loadPromptAsString();
+        return new PromptLoader(SYSTEM_PROMPT_FILE, fallback).loadPromptAsString();
     }
 }

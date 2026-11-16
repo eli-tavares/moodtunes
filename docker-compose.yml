@@ -1,8 +1,14 @@
-version: '3.8'
 services:
   app:
     build: .
     ports:
       - "8080:8080"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Provider: leave SPRING_PROFILES_ACTIVE empty for OpenAI (needs OPENAI_API_KEY),
+      # or set it to "claude" (needs ANTHROPIC_API_KEY).
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Optional but strongly recommended if the app is reachable from outside your machine:
+      - APP_ACCESS_TOKEN=${APP_ACCESS_TOKEN:-}
+    restart: unless-stopped
