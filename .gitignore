@@ -22,3 +22,10 @@ buildNumber.properties
 # VSC
 .DS_Store
 **/.DS_Store
+
+# Local secrets / settings - never commit
+/application.properties
+/application-*.properties
+/config/
+.env
+.env.*

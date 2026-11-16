@@ -64,6 +64,14 @@ export ANTHROPIC_API_KEY=sk-ant-...
 SPRING_PROFILES_ACTIVE=claude mvn spring-boot:run
 ```
 
+Instead of environment variables you can keep your settings in a git-ignored `application.properties` in the project
+folder (Spring Boot picks it up automatically when you run from there; create it yourself - it is never committed):
+
+```properties
+spring.profiles.active=claude
+spring.ai.anthropic.api-key=sk-ant-...
+```
+
 Only the selected provider's key is needed. Note that an Anthropic **API key** is separate from a claude.ai
 subscription (Pro/Max): create one in the Anthropic Console, where API usage is billed by tokens.
 To add another provider (Gemini, Mistral, Ollama, ...), add its `spring-ai-starter-model-*` dependency, a small
