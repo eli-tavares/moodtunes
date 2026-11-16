@@ -27,5 +27,16 @@ buildNumber.properties
 /application.properties
 /application-*.properties
 /config/
+# a local override placed anywhere (e.g. under src/main/resources, where it would also be packaged into the jar)
+**/application-local.*
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+
+# Editors / logs / local tooling
+.vscode/
+*.iml
+*.log
+.claude/settings.local.json

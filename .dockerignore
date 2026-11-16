@@ -1,4 +1,25 @@
+# Keep secrets and local config out of the build context entirely
+# (the context is uploaded to the Docker daemon, and a `COPY . .` would bake them into an image layer)
+application.properties
+application-*.properties
+**/application-local.*
+config/
+.env
+.env.*
+*.pem
+*.key
+
+# Not needed to build the image
 target/
 .git/
+.gitignore
+.github/
 .idea/
+.vscode/
+.DS_Store
+**/.DS_Store
 *.md
+*.log
+Dockerfile
+docker-compose.yml
+.dockerignore
