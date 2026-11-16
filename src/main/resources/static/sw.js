@@ -1,7 +1,7 @@
 'use strict';
 
 // Bump CACHE_VERSION whenever the app shell changes so old caches are dropped.
-const CACHE_VERSION = 'moodtunes-v3';
+const CACHE_VERSION = 'moodtunes-v4';
 const SHELL = [
     '/',
     '/styles.css',

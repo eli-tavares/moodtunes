@@ -265,3 +265,8 @@ a.btn { display: block; text-align: center; text-decoration: none; line-height: 
 
 #reportStatus { min-height: 1.5em; color: var(--ok); text-align: center; }
 #reportStatus.error { color: var(--danger); }
+
+.update-bar { position: sticky; top: 8px; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin: 0 0 12px; padding: 10px 12px; background: var(--card); border: 1px solid var(--accent);
+    border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15); }
+.update-bar[hidden] { display: none; }

@@ -113,9 +113,34 @@ class ApiControllerTest {
     }
 
     @Test
+    void validationErrorsNameTheFieldButNeverEchoTheValue() throws Exception {
+        mockMvc.perform(post("/api/recommend").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emotions\":[],\"mediaType\":\"SONGS\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("emotions")));
+
+        mockMvc.perform(post("/api/recommend").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emotions\":[\"happy\"],\"mediaType\":\"SECRETVALUE\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("mediaType")))
+            .andExpect(content().string(not(containsString("SECRETVALUE"))));
+    }
+
+    @Test
+    void anOldClientSendingTheRetiredSingularFieldGetsAClearError() throws Exception {
+        // before the mood log, the app sent {"emotion": "..."}; a stale cached page on a phone still does
+        mockMvc.perform(post("/api/recommend").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emotion\":\"happy\",\"mediaType\":\"SONGS\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("emotions")));
+        Mockito.verifyNoInteractions(musicService);
+    }
+
+    @Test
     void malformedJsonIsBadRequest() throws Exception {
         mockMvc.perform(post("/api/analyze").contentType(MediaType.APPLICATION_JSON).content("{not json"))
-            .andExpect(status().isBadRequest());
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value(containsString("could not be read")));
     }
 
     @Test
@@ -158,6 +183,7 @@ class ApiControllerTest {
             .andExpect(header().string("X-Frame-Options", "DENY"))
             .andExpect(header().string("Referrer-Policy", "no-referrer"))
             .andExpect(header().string("Cache-Control", "no-store"))
-            .andExpect(header().string("Content-Security-Policy", containsString("default-src 'none'")));
+            .andExpect(header().string("Content-Security-Policy", containsString("default-src 'none'")))
+            .andExpect(header().exists("X-App-Version"));
     }
 }

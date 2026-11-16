@@ -38,7 +38,19 @@ const reportStatus = $('reportStatus');
 
 let selected = [];            // emotion codes picked for this check-in, in the order tapped (max 3)
 let lastSavedKey = null;      // the selection that was last saved, so one tap cannot save the same thing twice
+let seenVersion = null;       // the server version this page started with (X-App-Version)
 let memoryToken = '';         // fallback when browser storage is unavailable (private mode, blocked storage)
+
+// ---- new deployment detection ---------------------------------------------------------------------------
+// An installed app can sit open on an old copy of the page while the server is redeployed. When the server's
+// version changes under us, offer a reload instead of failing with confusing errors.
+function noteVersion(resp) {
+    const version = resp.headers.get('X-App-Version');
+    if (!version) return;
+    if (seenVersion === null) seenVersion = version;
+    else if (version !== seenVersion) $('updateBar').hidden = false;
+}
+$('reloadBtn').addEventListener('click', () => window.location.reload());
 
 // ---- access code storage ---------------------------------------------------------------------------------
 // localStorage = "keep me unlocked on this device"; sessionStorage = until the app is closed.
@@ -101,6 +113,7 @@ async function checkAccess(token) {
             cache: 'no-store',
             signal: controller.signal,
         });
+        noteVersion(resp);
         if (resp.ok) return 'ok';
         if (resp.status === 401) return 'denied';
         if (resp.status === 429) return 'throttled';
@@ -208,6 +221,7 @@ async function request(method, path, payload) {
             body: payload === undefined ? undefined : JSON.stringify(payload),
             signal: controller.signal,
         });
+        noteVersion(resp);
         let body = null;
         try { body = await resp.json(); } catch { /* 204 or non-JSON body */ }
         if (!resp.ok) {

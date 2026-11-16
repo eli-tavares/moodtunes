@@ -134,6 +134,13 @@ recommendations always need a connection because they come from the AI.
 
 ---
 
+**After a redeploy:** the server announces its version on every response (`X-App-Version`). If the app on your phone was
+open during a deploy it still has the old page in memory; it notices the change and shows a **"A new version is
+available. Reload"** bar. Without it, an old page talking to a new server can fail with "Invalid request content".
+Rejected requests are logged by field name (never by value), and the error message tells you which field was wrong.
+
+---
+
 ## 🔒 Lock screen
 
 When `APP_ACCESS_TOKEN` is set, MoodTunes asks for the access code before showing the app. Tick
