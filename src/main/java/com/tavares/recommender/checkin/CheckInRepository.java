@@ -19,19 +19,53 @@ public class CheckInRepository {
 
     private final JdbcClient jdbc;
 
+    /**
+     * Creates the repository.
+     *
+     * @param jdbc the JDBC client for the application's database
+     */
     public CheckInRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Saves a check-in that has only emotions.
+     *
+     * @param userId    the owner
+     * @param createdAt when it happened
+     * @param emotions  the emotions picked
+     * @return the saved check-in, with its new id
+     */
     public CheckIn save(long userId, Instant createdAt, List<Emotion> emotions) {
         return save(userId, createdAt, emotions, null, false);
     }
 
+    /**
+     * Saves a check-in with kept words and a flag but no strength.
+     *
+     * @param userId    the owner
+     * @param createdAt when it happened
+     * @param emotions  the emotions picked
+     * @param note      the person's own words, or {@code null}
+     * @param flagged   whether the AI flagged the sentence
+     * @return the saved check-in, with its new id
+     */
     @Transactional
     public CheckIn save(long userId, Instant createdAt, List<Emotion> emotions, String note, boolean flagged) {
         return save(userId, createdAt, emotions, note, flagged, null);
     }
 
+    /**
+     * Saves a check-in and its emotions in one transaction.
+     *
+     * @param userId    the owner
+     * @param createdAt when it happened
+     * @param emotions  the emotions picked
+     * @param note      the person's own words, or {@code null}
+     * @param flagged   whether the AI flagged the sentence
+     * @param intensity strength 1-5, or {@code null}; the database refuses values outside that range
+     * @return the saved check-in, with its new id
+     */
     @Transactional
     public CheckIn save(long userId, Instant createdAt, List<Emotion> emotions, String note, boolean flagged,
                         Integer intensity) {
@@ -55,7 +89,14 @@ public class CheckInRepository {
         return new CheckIn(id, createdAt, List.copyOf(emotions), note, flagged, intensity);
     }
 
-    /** One user's check-ins with {@code fromInclusive <= createdAt < toExclusive}, oldest first. */
+    /**
+     * Finds one user's check-ins in a time window.
+     *
+     * @param userId        the owner; other people's check-ins are never returned
+     * @param fromInclusive start of the window
+     * @param toExclusive   end of the window
+     * @return the matching check-ins, oldest first
+     */
     public List<CheckIn> findBetween(long userId, Instant fromInclusive, Instant toExclusive) {
         List<Row> rows = jdbc.sql("""
                 SELECT c.id, c.created_at, c.note, c.flagged, c.intensity, e.emotion
@@ -71,7 +112,13 @@ public class CheckInRepository {
         return group(rows);
     }
 
-    /** One user's check-ins, newest first. */
+    /**
+     * Finds one user's most recent check-ins.
+     *
+     * @param userId the owner
+     * @param limit  the most to return
+     * @return up to {@code limit} check-ins, newest first
+     */
     public List<CheckIn> findRecent(long userId, int limit) {
         List<Long> ids = jdbc.sql("""
                 SELECT id FROM check_in WHERE user_id = :userId ORDER BY created_at DESC, id DESC LIMIT :limit
@@ -96,28 +143,64 @@ public class CheckInRepository {
         return group(rows);
     }
 
-    /** One user's everything, oldest first (for the export). */
+    /**
+     * Finds everything one user has saved, for the export.
+     *
+     * @param userId the owner
+     * @return all their check-ins, oldest first
+     */
     public List<CheckIn> findAll(long userId) {
         return findBetween(userId, Instant.EPOCH, Instant.parse("9999-01-01T00:00:00Z"));
     }
 
-    /** Deletes the check-in only if it belongs to {@code userId}; its emotions go with it (ON DELETE CASCADE). */
+    /**
+     * Deletes a check-in, but only if it belongs to the given user; its emotions go with it
+     * ({@code ON DELETE CASCADE}).
+     *
+     * @param userId the person asking
+     * @param id     the check-in to delete
+     * @return {@code true} if a check-in was deleted, {@code false} if it did not exist or belongs to someone else
+     */
     @Transactional
     public boolean delete(long userId, long id) {
         return jdbc.sql("DELETE FROM check_in WHERE id = :id AND user_id = :userId")
             .param("id", id).param("userId", userId).update() > 0;
     }
 
+    /**
+     * One joined database row: a check-in's own columns plus one of its emotions.
+     *
+     * @param id        the check-in's id
+     * @param createdAt when it was saved
+     * @param note      the kept words, or {@code null}
+     * @param flagged   whether the sentence was flagged
+     * @param intensity strength 1-5, or {@code null}
+     * @param emotion   one emotion code of the check-in
+     */
     private record Row(long id, Instant createdAt, String note, boolean flagged, Integer intensity, String emotion) {
     }
 
+    /**
+     * Reads one joined row.
+     *
+     * @param rs     the result set, positioned on the row
+     * @param rowNum the row number (unused)
+     * @return the row as a {@link Row}
+     * @throws java.sql.SQLException if a column cannot be read
+     */
     private static Row mapRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         return new Row(rs.getLong("id"), rs.getObject("created_at", OffsetDateTime.class).toInstant(),
             rs.getString("note"), rs.getBoolean("flagged"), (Integer) rs.getObject("intensity"),
             rs.getString("emotion"));
     }
 
-    /** Folds the joined rows back into check-ins, keeping the order of the query. */
+    /**
+     * Folds the joined rows back into check-ins, keeping the order of the query. Rows with an emotion code that is no
+     * longer in the vocabulary are skipped.
+     *
+     * @param rows the rows, one per check-in and emotion
+     * @return one check-in per id, with all its emotions
+     */
     private static List<CheckIn> group(List<Row> rows) {
         Map<Long, Row> heads = new LinkedHashMap<>();
         Map<Long, List<Emotion>> emotions = new LinkedHashMap<>();

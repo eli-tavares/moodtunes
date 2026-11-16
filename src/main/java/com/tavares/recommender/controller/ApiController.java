@@ -21,6 +21,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * The AI-backed endpoints: turning a sentence into emotions and emotions into music. Both are rate limited by
+ * {@link com.tavares.recommender.config.ApiGuardFilter} before they run, because each costs a model call.
+ */
 @RestController
 @RequestMapping("/api")
 public class ApiController {
@@ -29,6 +33,13 @@ public class ApiController {
     private final MusicService musicService;
     private final UserService users;
 
+    /**
+     * Creates the controller.
+     *
+     * @param moodService  turns a sentence into emotions
+     * @param musicService turns emotions into songs or albums
+     * @param users        looks up the signed-in person's settings
+     */
     public ApiController(MoodAnalysisService moodService, MusicService musicService, UserService users) {
         this.moodService = moodService;
         this.musicService = musicService;
@@ -37,20 +48,36 @@ public class ApiController {
 
     /**
      * Lets the UI verify the access code before showing the app. {@link com.tavares.recommender.config.ApiGuardFilter}
-     * has already rejected the request (401) if a token is required and wrong, so reaching this method means access
-     * is granted. No AI call is made.
+     * has already rejected the request (401) if a code is required and wrong, so reaching this method means access is
+     * granted. No AI call is made.
+     *
+     * @return {@code 204 No Content}
      */
     @GetMapping("/auth/check")
     public ResponseEntity<Void> checkAccess() {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Suggests emotions for a sentence.
+     *
+     * @param request the person's sentence (up to 500 characters)
+     * @return 4 to 6 emotion codes, best fit first, and whether the sentence was flagged as worrying
+     */
     @PostMapping(value = "/analyze", consumes = "application/json", produces = "application/json")
     public MoodResponse analyze(@Valid @RequestBody MoodRequest request) {
         MoodAnalysis analysis = moodService.analyze(request.getMoodText().trim());
         return new MoodResponse(analysis.emotions(), analysis.flagged());
     }
 
+    /**
+     * Suggests songs or albums for a selection of emotions.
+     *
+     * @param user    the signed-in person (set by the access filter, never by the client)
+     * @param request 1 to 3 emotions and {@code SONGS} or {@code ALBUMS}
+     * @return the suggestions
+     * @throws ForbiddenException if the person has turned music off; no model call is made then
+     */
     @PostMapping(value = "/recommend", consumes = "application/json", produces = "application/json")
     public MusicRecommendationResponse recommend(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                                  @Valid @RequestBody MusicRecommendationRequest request) {

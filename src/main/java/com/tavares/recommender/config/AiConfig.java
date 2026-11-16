@@ -12,6 +12,13 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiConfig {
 
+    /**
+     * Exposes the single {@link ChatClient} the application uses to talk to the model.
+     *
+     * @param chatModel the model auto-configured for the active provider (OpenAI, or Anthropic with the {@code claude}
+     *                  profile)
+     * @return a client bound to that model
+     */
     @Bean
     public ChatClient chatClient(ChatModel chatModel) {
         return ChatClient.create(chatModel);

@@ -42,12 +42,26 @@ public class CheckInController {
     private final ReportService reports;
     private final UserService users;
 
+    /**
+     * Creates the controller.
+     *
+     * @param checkIns the check-in service
+     * @param reports  builds the reports and the session summary
+     * @param users    maps the signed-in name to a database id
+     */
     public CheckInController(CheckInService checkIns, ReportService reports, UserService users) {
         this.checkIns = checkIns;
         this.reports = reports;
         this.users = users;
     }
 
+    /**
+     * Saves a check-in for the signed-in person.
+     *
+     * @param user    the signed-in person (set by the access filter)
+     * @param request the emotions, and optionally the person's words, the flag and a strength
+     * @return {@code 201 Created} with the saved check-in
+     */
     @PostMapping(value = "/checkins", consumes = "application/json", produces = "application/json")
     public ResponseEntity<CheckInResponse> save(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                                 @Valid @RequestBody CheckInRequest request) {
@@ -55,19 +69,41 @@ public class CheckInController {
             .body(CheckInResponse.from(checkIns.save(users.idOf(user), request.emotions(), request.note(), request.isFlagged(), request.intensity())));
     }
 
+    /**
+     * Lists the signed-in person's latest check-ins.
+     *
+     * @param user  the signed-in person
+     * @param limit how many to return (default 20, at most 100)
+     * @return the check-ins, newest first
+     */
     @GetMapping(value = "/checkins", produces = "application/json")
     public List<CheckInResponse> recent(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                         @RequestParam(defaultValue = "20") int limit) {
         return checkIns.recent(users.idOf(user), limit).stream().map(CheckInResponse::from).toList();
     }
 
+    /**
+     * Deletes one of the signed-in person's check-ins.
+     *
+     * @param user the signed-in person
+     * @param id   the check-in to delete
+     * @return {@code 204 No Content}, or {@code 404} if it does not exist or belongs to someone else
+     */
     @DeleteMapping("/checkins/{id}")
     public ResponseEntity<Void> delete(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                        @PathVariable long id) {
         return checkIns.delete(users.idOf(user), id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
-    /** {@code tz} is the viewer's IANA time zone (e.g. Europe/Dublin) so "today" and day buckets match their day. */
+    /**
+     * Builds a week, month or 3-month report.
+     *
+     * @param user  the signed-in person
+     * @param range {@code week}, {@code month} or {@code 3months}
+     * @param tz    the viewer's IANA time zone (for example {@code Europe/Dublin}), so "today" and day buckets match their day
+     * @return the report
+     * @throws BadRequestException for an unknown range or time zone
+     */
     @GetMapping(value = "/reports", produces = "application/json")
     public ReportResponse report(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                  @RequestParam(defaultValue = "week") String range,
@@ -75,14 +111,26 @@ public class CheckInController {
         return reports.report(users.idOf(user), ReportRange.parse(range), zone(tz));
     }
 
-    /** The last 7 days with every check-in in them, for the "Summary" tab (to show or send to a therapist). */
+    /**
+     * Builds the last 7 days with every check-in in them, for the "Summary" tab (to show or send to a therapist).
+     *
+     * @param user the signed-in person
+     * @param tz   the viewer's IANA time zone
+     * @return the report and the check-ins behind it
+     * @throws BadRequestException for an unknown time zone
+     */
     @GetMapping(value = "/summary", produces = "application/json")
     public SessionSummary summary(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                   @RequestParam(defaultValue = "UTC") String tz) {
         return reports.sessionSummary(users.idOf(user), zone(tz));
     }
 
-    /** Everything the signed-in user has saved, as a JSON download: their backup. */
+    /**
+     * Everything the signed-in person has saved, as a JSON download: their backup.
+     *
+     * @param user the signed-in person
+     * @return the export, sent as an attachment
+     */
     @GetMapping(value = "/export", produces = "application/json")
     public ResponseEntity<Map<String, Object>> export(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -99,6 +147,13 @@ public class CheckInController {
             .body(body);
     }
 
+    /**
+     * Parses a time zone from the query string.
+     *
+     * @param tz an IANA zone id
+     * @return the zone
+     * @throws BadRequestException if it is not a valid zone
+     */
     private static ZoneId zone(String tz) {
         try {
             return ZoneId.of(tz);

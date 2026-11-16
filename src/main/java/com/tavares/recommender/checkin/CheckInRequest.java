@@ -6,7 +6,14 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
-/** {@code note} and {@code flagged} are optional: the person's own words, kept only if they ticked "keep my words". */
+/**
+ * The body of {@code POST /api/checkins}.
+ *
+ * @param emotions the emotions the person picked: 1 to {@value Emotion#MAX_PER_CHECK_IN} words from the fixed vocabulary
+ * @param note     the person's own words, kept only if they ticked "keep my words" (at most 500 characters)
+ * @param flagged  whether the AI flagged the sentence; only stored when a note is kept
+ * @param intensity strength from 1 (barely) to 5 (very strong), or {@code null} when not given
+ */
 public record CheckInRequest(
     @NotEmpty(message = "emotions must not be empty")
     @Size(max = Emotion.MAX_PER_CHECK_IN, message = "emotions must have at most 3 entries")
@@ -19,6 +26,11 @@ public record CheckInRequest(
     Integer intensity
 ) {
 
+    /**
+     * Reads the optional flag.
+     *
+     * @return {@code true} only when the client sent {@code flagged: true}
+     */
     public boolean isFlagged() {
         return Boolean.TRUE.equals(flagged);
     }

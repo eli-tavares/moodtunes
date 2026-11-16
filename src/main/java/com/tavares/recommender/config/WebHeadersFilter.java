@@ -24,11 +24,20 @@ public class WebHeadersFilter extends OncePerRequestFilter {
      */
     static final String VERSION = resolveVersion();
 
+    /**
+     * Works out the deployment version.
+     *
+     * @return the first 7 characters of the Railway git commit, or {@code dev-<start time>} when not on Railway
+     */
     private static String resolveVersion() {
         String commit = System.getenv("RAILWAY_GIT_COMMIT_SHA");
         return commit != null && commit.length() >= 7 ? commit.substring(0, 7) : "dev-" + System.currentTimeMillis();
     }
 
+    /**
+     * The Content-Security-Policy: only this origin may supply scripts, styles, images and connections, and nothing may
+     * be framed or submitted as a form. The page has no inline script or style, so none is allowed.
+     */
     static final String CSP = String.join("; ",
         "default-src 'none'",
         "script-src 'self'",
@@ -41,6 +50,16 @@ public class WebHeadersFilter extends OncePerRequestFilter {
         "form-action 'none'",
         "frame-ancestors 'none'");
 
+    /**
+     * Adds the security and version headers, and sets the caching rules: API responses are never stored, and the
+     * page, service worker and manifest are always revalidated so an installed copy of the app can update.
+     *
+     * @param request  the incoming request
+     * @param response the response to add headers to
+     * @param chain    the rest of the filter chain
+     * @throws ServletException if a later filter fails
+     * @throws IOException      if writing the response fails
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {

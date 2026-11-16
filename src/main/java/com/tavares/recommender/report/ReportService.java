@@ -33,11 +33,25 @@ public class ReportService {
     private final CheckInRepository repository;
     private final Clock clock;
 
+    /**
+     * Creates the service.
+     *
+     * @param repository where check-ins are read from
+     * @param clock      the time source for "today"
+     */
     public ReportService(CheckInRepository repository, Clock clock) {
         this.repository = repository;
         this.clock = clock;
     }
 
+    /**
+     * Builds a report for one person and period, compared with the period just before it.
+     *
+     * @param userId the owner
+     * @param range  week, month or 3 months
+     * @param zone   the viewer's time zone, which decides what "today" and each day boundary mean
+     * @return the report
+     */
     public ReportResponse report(long userId, ReportRange range, ZoneId zone) {
         LocalDate today = LocalDate.now(clock.withZone(zone));
         LocalDate from = today.minusDays(range.days() - 1L);
@@ -58,8 +72,12 @@ public class ReportService {
     }
 
     /**
-     * Everything for a therapy session in one go: the last-7-days report plus every check-in in that window, oldest
-     * first, with the person's kept words and the "sounded heavy" markers.
+     * Builds everything needed for a therapy session in one go: the last-7-days report plus every check-in in that window,
+     * oldest first, with the person's kept words and the "sounded heavy" markers.
+     *
+     * @param userId the owner
+     * @param zone   the viewer's time zone
+     * @return the report and the check-ins behind it
      */
     public SessionSummary sessionSummary(long userId, ZoneId zone) {
         ReportResponse week = report(userId, ReportRange.WEEK, zone);
@@ -69,25 +87,57 @@ public class ReportService {
             .map(CheckInResponse::from).toList());
     }
 
+    /**
+     * The calendar day of a check-in in the viewer's time zone.
+     *
+     * @param checkIn the check-in
+     * @param zone    the viewer's time zone
+     * @return its local date
+     */
     private static LocalDate localDate(CheckIn checkIn, ZoneId zone) {
         return checkIn.createdAt().atZone(zone).toLocalDate();
     }
 
+    /**
+     * Averages the mood scores of some check-ins.
+     *
+     * @param checkIns the check-ins
+     * @return the average, or {@code null} when none has a score
+     */
     private static Double averageMood(List<CheckIn> checkIns) {
         return checkIns.stream().map(CheckIn::mood).filter(m -> m != null)
             .mapToDouble(Double::doubleValue).average().stream().boxed().findFirst().orElse(null);
     }
 
+    /**
+     * Averages the strength of some check-ins, skipping those that gave none.
+     *
+     * @param checkIns the check-ins
+     * @return the average, or {@code null} when none gave a strength
+     */
     private static Double averageIntensity(List<CheckIn> checkIns) {
         return checkIns.stream().map(CheckIn::intensity).filter(i -> i != null)
             .mapToInt(Integer::intValue).average().stream().boxed().findFirst().orElse(null);
     }
 
-    /** Rounded to 2 decimals so the JSON is tidy and tests are stable. */
+    /**
+     * Rounds to 2 decimals so the JSON is tidy and tests are stable.
+     *
+     * @param value the number, or {@code null}
+     * @return the rounded number, or {@code null} when {@code value} is {@code null}
+     */
     private static Double round(Double value) {
         return value == null ? null : Math.round(value * 100.0) / 100.0;
     }
 
+    /**
+     * Totals for the current period, compared with the previous one.
+     *
+     * @param current  check-ins in the period
+     * @param previous check-ins in the period before
+     * @param zone     the viewer's time zone
+     * @return the summary
+     */
     private Summary summary(List<CheckIn> current, List<CheckIn> previous, ZoneId zone) {
         Set<LocalDate> days = new HashSet<>();
         current.forEach(c -> days.add(localDate(c, zone)));
@@ -98,6 +148,15 @@ public class ReportService {
             round(change), round(averageIntensity(current)), round(averageIntensity(previous)));
     }
 
+    /**
+     * Splits the period into days (or weeks) and counts what happened in each, including empty ones.
+     *
+     * @param current check-ins in the period
+     * @param range   the period, which decides the bucket size
+     * @param from    the first day of the period
+     * @param zone    the viewer's time zone
+     * @return one bucket per day or week, oldest first
+     */
     private List<Bucket> buckets(List<CheckIn> current, ReportRange range, LocalDate from, ZoneId zone) {
         int count = range.days() / range.bucketDays();
         List<List<CheckIn>> perBucket = new ArrayList<>();
@@ -131,6 +190,13 @@ public class ReportService {
         return result;
     }
 
+    /**
+     * Counts how often each emotion was picked, and on how many days.
+     *
+     * @param current check-ins in the period
+     * @param zone    the viewer's time zone
+     * @return the emotions, most frequent first (ties by name)
+     */
     private List<EmotionStat> emotionStats(List<CheckIn> current, ZoneId zone) {
         Map<Emotion, Integer> counts = new EnumMap<>(Emotion.class);
         Map<Emotion, Set<LocalDate>> days = new EnumMap<>(Emotion.class);

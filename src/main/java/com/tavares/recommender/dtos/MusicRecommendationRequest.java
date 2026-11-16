@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/** The body of {@code POST /api/recommend}. */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -20,6 +21,7 @@ public class MusicRecommendationRequest {
     @Size(max = Emotion.MAX_PER_CHECK_IN, message = "emotions must have at most 3 entries")
     private List<@NotBlank String> emotions;
 
+    /** {@code SONGS} or {@code ALBUMS}, in any letter case. */
     @NotBlank(message = "mediaType must not be blank")
     @Pattern(regexp = "(?i)^(songs|albums)$", message = "mediaType must be SONGS or ALBUMS")
     private String mediaType;

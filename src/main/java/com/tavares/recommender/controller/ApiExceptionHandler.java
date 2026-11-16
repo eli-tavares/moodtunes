@@ -30,6 +30,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     /**
      * Says which field was rejected and why, using only our own validation messages and never the value that was
      * sent. "Invalid request content." alone is useless when a phone is running an old copy of the app.
+     *
+     * @param ex      the validation failure
+     * @param headers headers to send
+     * @param status  the status chosen by the framework (replaced by 400)
+     * @param request the failing request
+     * @return a 400 problem response naming up to three fields
      */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
@@ -47,6 +53,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             headers, HttpStatus.BAD_REQUEST, request);
     }
 
+    /**
+     * Answers a body that is not valid JSON, without echoing any of it back.
+     *
+     * @param ex      the parse failure
+     * @param headers headers to send
+     * @param status  the status chosen by the framework (replaced by 400)
+     * @param request the failing request
+     * @return a 400 problem response
+     */
     @Override
     protected ResponseEntity<Object> handleHttpMessageNotReadable(HttpMessageNotReadableException ex,
                                                                   HttpHeaders headers, HttpStatusCode status,
@@ -57,16 +72,34 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             "The request body could not be read. It must be valid JSON."), headers, HttpStatus.BAD_REQUEST, request);
     }
 
+    /**
+     * Maps our own validation failures to 400.
+     *
+     * @param ex the failure; its message is written by us and is safe to show
+     * @return a 400 problem response
+     */
     @ExceptionHandler(BadRequestException.class)
     public ProblemDetail handleBadRequest(BadRequestException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /**
+     * Maps "not allowed" to 403.
+     *
+     * @param ex the failure; its message is written by us and is safe to show
+     * @return a 403 problem response
+     */
     @ExceptionHandler(ForbiddenException.class)
     public ProblemDetail handleForbidden(ForbiddenException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
+    /**
+     * Maps a failed or unusable model answer to 502 with a friendly generic message; the real reason is only logged.
+     *
+     * @param ex the failure
+     * @return a 502 problem response
+     */
     @ExceptionHandler(AiResponseException.class)
     public ProblemDetail handleAiFailure(AiResponseException ex) {
         log.warn("AI failure: {}", ex.getMessage());
@@ -74,6 +107,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             "We couldn't get a good answer from the AI right now. Please try again.");
     }
 
+    /**
+     * Catches everything else and answers with a generic 500, so no internal detail (a stack trace, a password in a
+     * connection string) can leak. The real cause goes to the server log.
+     *
+     * @param ex the unexpected failure
+     * @return a 500 problem response
+     */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpected(Exception ex) {
         log.error("Unexpected error", ex);

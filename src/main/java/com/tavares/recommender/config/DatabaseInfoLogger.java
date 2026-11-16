@@ -16,10 +16,21 @@ public class DatabaseInfoLogger implements ApplicationRunner {
 
     private final DataSource dataSource;
 
+    /**
+     * Creates the logger.
+     *
+     * @param dataSource the application's data source
+     */
     public DatabaseInfoLogger(DataSource dataSource) {
         this.dataSource = dataSource;
     }
 
+    /**
+     * Logs which database product is in use, with a warning when it is the throw-away local H2 file database.
+     *
+     * @param args the application arguments (unused)
+     * @throws Exception if a connection to the database cannot be opened
+     */
     @Override
     public void run(ApplicationArguments args) throws Exception {
         try (Connection connection = dataSource.getConnection()) {

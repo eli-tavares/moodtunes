@@ -27,9 +27,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ApiGuardFilter extends OncePerRequestFilter {
 
+    /** Request header that carries the person's access code. */
     public static final String TOKEN_HEADER = "X-Access-Token";
     /** Request attribute holding the signed-in user's name; controllers read it, clients can never set it. */
     public static final String USER_ATTRIBUTE = "moodtunes.user";
+    /** Largest request body accepted, in bytes. Every real request is far smaller (a sentence of at most 500 characters). */
     static final long MAX_BODY_BYTES = 4 * 1024;
 
     private static final Logger log = LoggerFactory.getLogger(ApiGuardFilter.class);
@@ -40,6 +42,12 @@ public class ApiGuardFilter extends OncePerRequestFilter {
     private final RateLimiter authFailureLimiter;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Creates the filter and its three rate limiters from configuration.
+     *
+     * @param properties  access codes and rate-limit settings ({@code app.*})
+     * @param objectMapper used to write the JSON error bodies
+     */
     public ApiGuardFilter(AppProperties properties, ObjectMapper objectMapper) {
         this.directory = new UserDirectory(properties);
         this.objectMapper = objectMapper;
@@ -49,11 +57,30 @@ public class ApiGuardFilter extends OncePerRequestFilter {
         this.authFailureLimiter = new RateLimiter(limits.authFailuresPerMinute(), Integer.MAX_VALUE);
     }
 
+    /**
+     * Limits the filter to the API; the static page, the service worker and the health check stay open so the lock
+     * screen can load.
+     *
+     * @param request the incoming request
+     * @return {@code true} for anything outside {@code /api/}
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !request.getRequestURI().startsWith("/api/");
     }
 
+    /**
+     * Applies, in order: the body-size cap, the access-code check (with throttling of wrong guesses) and the rate
+     * limit, then hands the request on. On success the signed-in name is stored in the {@link #USER_ATTRIBUTE}
+     * request attribute. A rejected request gets an RFC 7807 JSON body and never reaches a controller, so it can
+     * never cause a paid AI call.
+     *
+     * @param request  the incoming request
+     * @param response the response, used only when the request is rejected
+     * @param chain    the rest of the filter chain
+     * @throws ServletException if a later filter fails
+     * @throws IOException      if the error body cannot be written
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
@@ -87,11 +114,25 @@ public class ApiGuardFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
+    /**
+     * Tells whether the request will trigger a paid model call.
+     *
+     * @param request the incoming request
+     * @return {@code true} for {@code /api/analyze} and {@code /api/recommend}
+     */
     private static boolean isAiCall(HttpServletRequest request) {
         String path = request.getRequestURI();
         return path.equals("/api/analyze") || path.equals("/api/recommend");
     }
 
+    /**
+     * Writes a short problem-details response and ends the request.
+     *
+     * @param response the response to write
+     * @param status   the HTTP status to send
+     * @param detail   a message that is safe to show the person
+     * @throws IOException if the body cannot be written
+     */
     private void reject(HttpServletResponse response, HttpStatus status, String detail) throws IOException {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         response.setStatus(status.value());

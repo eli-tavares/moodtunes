@@ -19,11 +19,19 @@ public record AppProperties(
     @DefaultValue RateLimit rateLimit
 ) {
 
+    /**
+     * Tells whether the legacy single access code is configured.
+     *
+     * @return {@code true} when {@code app.access-token} is not blank
+     */
     public boolean accessTokenEnabled() {
         return accessToken != null && !accessToken.isBlank();
     }
 
     /**
+     * Request limits that protect the (paid) upstream AI API and guard against guessing access codes. Each limit counts
+     * requests in a one-minute window.
+     *
      * @param perClientPerMinute        AI calls (analyze, recommend) per client; these cost money
      * @param globalPerMinute           AI calls across all clients: a hard ceiling on spend
      * @param authFailuresPerMinute     wrong access codes per client, against guessing

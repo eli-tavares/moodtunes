@@ -19,10 +19,23 @@ public class RateLimiter {
     private final LoadingCache<String, AtomicInteger> clientWindows;
     private final LoadingCache<String, AtomicInteger> globalWindow;
 
+    /**
+     * Creates a limiter that uses the real clock.
+     *
+     * @param perClientLimit most requests one client may make per minute
+     * @param globalLimit    most requests all clients together may make per minute
+     */
     public RateLimiter(int perClientLimit, int globalLimit) {
         this(perClientLimit, globalLimit, Ticker.systemTicker());
     }
 
+    /**
+     * Creates a limiter with a controllable clock, for tests.
+     *
+     * @param perClientLimit most requests one client may make per minute
+     * @param globalLimit    most requests all clients together may make per minute
+     * @param ticker         the time source that decides when a one-minute window ends
+     */
     RateLimiter(int perClientLimit, int globalLimit, Ticker ticker) {
         this.perClientLimit = perClientLimit;
         this.globalLimit = globalLimit;
@@ -37,7 +50,12 @@ public class RateLimiter {
             .build(key -> new AtomicInteger());
     }
 
-    /** @return {@code true} if the request may proceed, {@code false} if either budget is exhausted. */
+    /**
+     * Counts one request against the client's budget and the global budget.
+     *
+     * @param clientKey identifies the client, normally its IP address
+     * @return {@code true} if the request may proceed, {@code false} if either budget is exhausted
+     */
     public boolean tryAcquire(String clientKey) {
         if (clientWindows.get(clientKey).incrementAndGet() > perClientLimit) {
             return false;

@@ -12,6 +12,10 @@ import java.util.stream.Collectors;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+/**
+ * Suggests songs or albums for a selection of emotions. Results are cached for a while, because the same selection
+ * gives an equally good answer and every model call costs money.
+ */
 @Service
 public class MusicService {
 
@@ -22,6 +26,12 @@ public class MusicService {
     private final ObjectMapper objectMapper;
     private final String systemPrompt;
 
+    /**
+     * Creates the service and loads the system prompt.
+     *
+     * @param chatAdapter  the model gateway
+     * @param objectMapper reads the model's JSON answer
+     */
     public MusicService(ChatClientAdapter chatAdapter, ObjectMapper objectMapper) {
         this.chatAdapter = chatAdapter;
         this.objectMapper = objectMapper;
@@ -29,9 +39,16 @@ public class MusicService {
     }
 
     /**
-     * Returns recommendations for 1-3 emotions (already validated and in stable order, see
-     * {@code Emotion.parseAll}). The <em>parsed</em> list is cached, so a malformed model answer is never cached:
-     * it raises {@link AiResponseException} and the next call retries.
+     * Returns recommendations for a selection of emotions.
+     *
+     * <p>The prompt includes a mood of {@code good}, {@code low} or {@code mixed}, worked out in Java from the emotion
+     * scores. The <em>parsed</em> list is cached, so a malformed model answer is never cached: it raises
+     * {@link AiResponseException} and the next call retries.
+     *
+     * @param emotions 1-3 emotions, already validated and in stable order (see {@link Emotion#parseAll})
+     * @param type     songs or albums
+     * @return at most five suggestions
+     * @throws AiResponseException if the model's answer cannot be used
      */
     @Cacheable(value = "musicRecommendations", key = "#emotions.toString() + '_' + #type")
     public List<MusicRecommendation> recommend(List<Emotion> emotions, MusicType type) {
@@ -41,6 +58,16 @@ public class MusicService {
         return parse(chatAdapter.call(systemPrompt, userPrompt));
     }
 
+    /**
+     * Reads the model's answer.
+     *
+     * <p>Models like to wrap JSON in markdown fences or add a sentence around it, so the outermost array is taken. Items
+     * without a title are dropped and the list is cut to the maximum.
+     *
+     * @param modelOutput the raw text the model returned
+     * @return the valid suggestions
+     * @throws AiResponseException if no array can be read or none of its items is usable
+     */
     List<MusicRecommendation> parse(String modelOutput) {
         // Models like to wrap JSON in markdown fences or add a sentence around it; take the outermost array.
         int start = modelOutput.indexOf('[');
@@ -65,6 +92,11 @@ public class MusicService {
         }
     }
 
+    /**
+     * Loads the music prompt.
+     *
+     * @return the prompt file, or a built-in fallback if it cannot be read
+     */
     private static String loadSystemPrompt() {
         String fallback = """
             You are a helpful music recommendation assistant.

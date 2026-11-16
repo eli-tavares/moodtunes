@@ -10,11 +10,22 @@ public class PromptLoader {
     private final String filePrompt;
     private final String defaultSystemPrompt;
 
+    /**
+     * Creates a loader for one prompt.
+     *
+     * @param filePrompt          the file name inside {@code prompts/} on the classpath
+     * @param defaultSystemPrompt used if the file cannot be read
+     */
     public PromptLoader(String filePrompt, String defaultSystemPrompt) {
         this.filePrompt = filePrompt;
         this.defaultSystemPrompt = defaultSystemPrompt;
     }
 
+    /**
+     * Reads the prompt file.
+     *
+     * @return the file's text (UTF-8), or the built-in default if the file is missing or unreadable
+     */
     public String loadPromptAsString() {
         try (var in = new ClassPathResource("prompts/" + filePrompt).getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);

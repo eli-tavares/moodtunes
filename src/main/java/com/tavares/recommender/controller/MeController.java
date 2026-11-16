@@ -19,15 +19,33 @@ public class MeController {
 
     private final UserService users;
 
+    /**
+     * Creates the controller.
+     *
+     * @param users the user service
+     */
     public MeController(UserService users) {
         this.users = users;
     }
 
+    /**
+     * Says who is signed in and what their settings are.
+     *
+     * @param user the signed-in person (set by the access filter)
+     * @return their name and whether music suggestions are on
+     */
     @GetMapping(produces = "application/json")
     public MeResponse me(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user) {
         return new MeResponse(user, users.musicEnabled(users.idOf(user)));
     }
 
+    /**
+     * Turns music suggestions on or off for the signed-in person only. The choice is saved on the server.
+     *
+     * @param user    the signed-in person
+     * @param request the new setting
+     * @return the person's name and the setting as now saved
+     */
     @PutMapping(value = "/music", consumes = "application/json", produces = "application/json")
     public MeResponse setMusic(@RequestAttribute(ApiGuardFilter.USER_ATTRIBUTE) String user,
                                @Valid @RequestBody MusicSettingRequest request) {
