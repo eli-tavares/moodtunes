@@ -18,7 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(value = ApiController.class,
-    properties = {"app.access-token=s3cret", "app.rate-limit.per-client-per-minute=3"})
+    properties = {"app.access-token=s3cret", "app.rate-limit.per-client-per-minute=3",
+        "app.rate-limit.auth-failures-per-minute=3"})
 class ApiGuardFilterTest {
 
     private static final String BODY = "{\"moodText\":\"happy\"}";
@@ -116,5 +117,14 @@ class ApiGuardFilterTest {
             req.setRemoteAddr(address);
             return req;
         };
+    }
+
+    @Test
+    void cheapDataEndpointsAreNotLimitedByTheTightAiBudget() throws Exception {
+        for (int i = 0; i < 10; i++) {   // the AI budget in this test is 3 per minute
+            mockMvc.perform(get("/api/auth/check").header(ApiGuardFilter.TOKEN_HEADER, "s3cret")
+                    .with(from("10.0.3.1")))
+                .andExpect(status().isNoContent());
+        }
     }
 }

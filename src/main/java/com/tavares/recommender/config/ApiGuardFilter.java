@@ -32,14 +32,18 @@ public class ApiGuardFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(ApiGuardFilter.class);
 
     private final AppProperties properties;
-    private final RateLimiter rateLimiter;
+    private final RateLimiter aiLimiter;
+    private final RateLimiter generalLimiter;
+    private final RateLimiter authFailureLimiter;
     private final ObjectMapper objectMapper;
 
     public ApiGuardFilter(AppProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.rateLimiter = new RateLimiter(
-            properties.rateLimit().perClientPerMinute(), properties.rateLimit().globalPerMinute());
+        var limits = properties.rateLimit();
+        this.aiLimiter = new RateLimiter(limits.perClientPerMinute(), limits.globalPerMinute());
+        this.generalLimiter = new RateLimiter(limits.generalPerClientPerMinute(), limits.generalGlobalPerMinute());
+        this.authFailureLimiter = new RateLimiter(limits.authFailuresPerMinute(), Integer.MAX_VALUE);
     }
 
     @Override
@@ -58,7 +62,7 @@ public class ApiGuardFilter extends OncePerRequestFilter {
 
         if (properties.accessTokenEnabled() && !tokenMatches(request.getHeader(TOKEN_HEADER))) {
             // Same treatment for missing and wrong tokens; also throttle guessing.
-            if (!rateLimiter.tryAcquire(request.getRemoteAddr())) {
+            if (!authFailureLimiter.tryAcquire(request.getRemoteAddr())) {
                 reject(response, HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Please slow down.");
                 return;
             }
@@ -66,7 +70,9 @@ public class ApiGuardFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (!rateLimiter.tryAcquire(request.getRemoteAddr())) {
+        // AI calls cost money, so they get the tight budget; saving and reading mood data is cheap.
+        RateLimiter limiter = isAiCall(request) ? aiLimiter : generalLimiter;
+        if (!limiter.tryAcquire(request.getRemoteAddr())) {
             log.warn("Rate limit exceeded for {}", request.getRemoteAddr());
             response.setHeader("Retry-After", "60");
             reject(response, HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Please slow down.");
@@ -74,6 +80,11 @@ public class ApiGuardFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private static boolean isAiCall(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return path.equals("/api/analyze") || path.equals("/api/recommend");
     }
 
     private boolean tokenMatches(String supplied) {

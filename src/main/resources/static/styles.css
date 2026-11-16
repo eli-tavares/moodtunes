@@ -8,6 +8,15 @@
     --accent-text: #ffffff;
     --danger: #dc2626;
     --ok: #475569;
+    /* chart palette: categorical slots 1-4, validated with the dataviz checks against --card */
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --grid: #e2e8f0;
+    --axis: #94a3b8;
+    --up: #006300;
+    --down: #d03b3b;
     color-scheme: light dark;
 }
 
@@ -22,6 +31,14 @@
         --accent-text: #0f172a;
         --danger: #f87171;
         --ok: #94a3b8;
+        --series-1: #3987e5;
+        --series-2: #d95926;
+        --series-3: #199e70;
+        --series-4: #c98500;
+        --grid: #2c3a50;
+        --axis: #64748b;
+        --up: #0ca30c;
+        --down: #f87171;
     }
 }
 
@@ -132,3 +149,119 @@ a.btn { display: block; text-align: center; text-decoration: none; line-height: 
 .check input { width: 22px; height: 22px; margin: 0; padding: 0; flex: none; }
 
 .error-text { color: var(--danger); min-height: 1.4em; margin: 12px 0 0; text-align: center; }
+
+/* ---- tabs -------------------------------------------------------------------------------------------------- */
+.tabs, .range { display: flex; gap: 4px; padding: 4px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; margin: 0 0 16px; }
+.tab, .range-btn {
+    flex: 1; font: inherit; font-weight: 600; color: var(--muted); background: transparent; border: 0;
+    border-radius: 9px; min-height: 40px; cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.tab[aria-selected="true"], .range-btn[aria-pressed="true"] { background: var(--card); color: var(--text);
+    box-shadow: 0 0 0 1px var(--border); }
+.tab:focus-visible, .range-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.span-text { color: var(--muted); font-size: 0.9rem; margin: -6px 0 14px; text-align: center; }
+
+/* ---- check-in tab ---------------------------------------------------------------------------------------- */
+.hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 10px; }
+.actions { margin-top: 14px; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn.saved { opacity: 0.7; }
+
+/* ---- reports --------------------------------------------------------------------------------------------- */
+#reportBody.loading { opacity: 0.5; pointer-events: none; }   /* keep the frame while refetching: no flash */
+
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.tile { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; min-width: 0; }
+.tile-label { color: var(--muted); font-size: 0.8rem; margin: 0; }
+.tile-value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; margin: 2px 0; }
+.tile-delta { font-size: 0.78rem; margin: 0; color: var(--muted); }
+.tile-delta.up { color: var(--up); font-weight: 600; }
+.tile-delta.down { color: var(--down); font-weight: 600; }
+
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.card-head h2 { margin: 0; }
+.link-btn { font: inherit; font-size: 0.85rem; color: var(--accent); background: none; border: 0; padding: 8px 4px;
+    cursor: pointer; min-height: 36px; }
+.subtitle { color: var(--muted); font-size: 0.85rem; margin: 0 0 8px; }
+.empty { color: var(--muted); text-align: center; padding: 28px 8px; margin: 0; }
+
+.chart-host { position: relative; }
+.chart { width: 100%; height: auto; display: block; touch-action: pan-y; overflow: visible; }
+.chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.chart .end-label { fill: var(--text); font-size: 11px; font-weight: 600; }
+.chart .hit { fill: transparent; }
+.chart .crosshair { stroke: var(--axis); stroke-width: 1; }
+.chart .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart .dot { stroke: var(--card); stroke-width: 2; }          /* 2px surface ring */
+.chart .bar { stroke: none; }
+.chart .lift { fill: none; stroke: var(--text); stroke-width: 1; opacity: 0.35; }
+.chart .tex-line { stroke: CanvasText; stroke-width: 1.4; }
+
+.s1 { stroke: var(--series-1); } .s2 { stroke: var(--series-2); } .s3 { stroke: var(--series-3); } .s4 { stroke: var(--series-4); }
+.f1 { fill: var(--series-1); }   .f2 { fill: var(--series-2); }   .f3 { fill: var(--series-3); }   .f4 { fill: var(--series-4); }
+
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0;
+    font-size: 0.85rem; color: var(--text); }
+.legend li { display: flex; align-items: center; gap: 6px; }
+.swatch { display: inline-block; flex: none; }
+.swatch-box { width: 10px; height: 10px; border-radius: 2px; }
+.swatch-line { width: 16px; height: 0; border-top: 2px solid; }
+.sw1.swatch-box { background: var(--series-1); } .sw2.swatch-box { background: var(--series-2); }
+.sw3.swatch-box { background: var(--series-3); } .sw4.swatch-box { background: var(--series-4); }
+.sw1.swatch-line { border-color: var(--series-1); } .sw2.swatch-line { border-color: var(--series-2); }
+.sw3.swatch-line { border-color: var(--series-3); } .sw4.swatch-line { border-color: var(--series-4); }
+
+.tooltip {
+    position: absolute; top: -4px; transform: translate(-50%, -100%); z-index: 2; pointer-events: none;
+    background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 10px; font-size: 0.85rem; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); white-space: nowrap;
+}
+.tooltip[hidden] { display: none; }
+.tt-title { color: var(--muted); font-size: 0.78rem; margin-bottom: 4px; }
+.tt-row { display: flex; align-items: center; gap: 6px; }
+.tt-name { color: var(--muted); }
+.tt-key { display: inline-block; width: 12px; height: 0; border-top: 2px solid; flex: none; }
+.k1 { border-color: var(--series-1); } .k2 { border-color: var(--series-2); }
+.k3 { border-color: var(--series-3); } .k4 { border-color: var(--series-4); }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px;
+    font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--grid); }
+.data-table thead th { color: var(--muted); font-weight: 600; border-top: 0; }
+.data-table tbody th { font-weight: 400; }
+
+.picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.pick { display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; min-height: 36px;
+    padding: 6px 12px; font-size: 0.9rem; }
+.pick[aria-pressed="true"] { background: transparent; color: var(--text); border-color: var(--text); }
+.pick .swatch-line { width: 12px; }
+
+.ranked { list-style: none; margin: 0; padding: 0; }
+.ranked li { display: grid; grid-template-columns: 96px 1fr 36px; align-items: center; gap: 8px; padding: 5px 0; }
+.rank-name { text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-track { height: 12px; }
+.rank-bar { height: 12px; background: var(--series-1); border-radius: 0 4px 4px 0; min-width: 4px; }   /* square at baseline */
+.rank-count { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.rank-days { grid-column: 2 / 4; color: var(--muted); font-size: 0.78rem; margin-top: -4px; }
+
+.history { list-style: none; margin: 0; padding: 0; }
+.history li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0;
+    border-top: 1px solid var(--grid); }
+.history li:first-child { border-top: 0; }
+.h-when { color: var(--muted); font-size: 0.8rem; }
+.h-emotions { text-transform: capitalize; font-weight: 600; }
+
+/* texture is the opt-in backup channel: only for forced-colors / print, 45 and 135 degrees, never by default */
+@media (forced-colors: active), print {
+    .chart .bar.ta { fill: url(#tex-a); stroke: CanvasText; stroke-width: 1; }
+    .chart .bar.tb { fill: url(#tex-b); stroke: CanvasText; stroke-width: 1; }
+}
+
+#reportStatus { min-height: 1.5em; color: var(--ok); text-align: center; }
+#reportStatus.error { color: var(--danger); }

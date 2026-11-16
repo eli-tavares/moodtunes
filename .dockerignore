@@ -23,3 +23,7 @@ target/
 Dockerfile
 docker-compose.yml
 .dockerignore
+
+# Local H2 database
+data/
+*.mv.db

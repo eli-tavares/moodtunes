@@ -3,11 +3,12 @@ package com.tavares.recommender.service;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import com.tavares.recommender.checkin.Emotion;
 import com.tavares.recommender.config.ChatClientAdapter;
 import com.tavares.recommender.dtos.MusicRecommendation;
 import com.tavares.recommender.prompts.PromptLoader;
 import java.util.List;
-import java.util.Locale;
+import java.util.stream.Collectors;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
@@ -28,13 +29,14 @@ public class MusicService {
     }
 
     /**
-     * Returns recommendations for an emotion. The <em>parsed</em> list is cached (case-insensitively), so a
-     * malformed model answer is never cached: it raises {@link AiResponseException} and the next call retries.
+     * Returns recommendations for 1-3 emotions (already validated and in stable order, see
+     * {@code Emotion.parseAll}). The <em>parsed</em> list is cached, so a malformed model answer is never cached:
+     * it raises {@link AiResponseException} and the next call retries.
      */
-    @Cacheable(value = "musicRecommendations", key = "#emotion.trim().toLowerCase() + '_' + #type")
-    public List<MusicRecommendation> recommend(String emotion, MusicType type) {
-        String normalizedEmotion = emotion.trim().toLowerCase(Locale.ROOT);
-        String userPrompt = "Emotion: " + normalizedEmotion + "\nType: " + type.getString();
+    @Cacheable(value = "musicRecommendations", key = "#emotions.toString() + '_' + #type")
+    public List<MusicRecommendation> recommend(List<Emotion> emotions, MusicType type) {
+        String emotionList = emotions.stream().map(Emotion::code).collect(Collectors.joining(", "));
+        String userPrompt = "Emotions: " + emotionList + "\nType: " + type.getString();
         return parse(chatAdapter.call(systemPrompt, userPrompt));
     }
 

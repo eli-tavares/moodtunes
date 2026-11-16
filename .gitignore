@@ -40,3 +40,8 @@ buildNumber.properties
 *.iml
 *.log
 .claude/settings.local.json
+
+# Local H2 database (mood history while testing locally)
+/data/
+*.mv.db
+*.trace.db

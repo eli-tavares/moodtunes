@@ -20,9 +20,19 @@ public record AppProperties(
         return accessToken != null && !accessToken.isBlank();
     }
 
+    /**
+     * @param perClientPerMinute        AI calls (analyze, recommend) per client; these cost money
+     * @param globalPerMinute           AI calls across all clients: a hard ceiling on spend
+     * @param authFailuresPerMinute     wrong access codes per client, against guessing
+     * @param generalPerClientPerMinute everything else (check-ins, reports): cheap, so much more generous
+     * @param generalGlobalPerMinute    same, across all clients
+     */
     public record RateLimit(
         @DefaultValue("20") int perClientPerMinute,
-        @DefaultValue("120") int globalPerMinute
+        @DefaultValue("120") int globalPerMinute,
+        @DefaultValue("10") int authFailuresPerMinute,
+        @DefaultValue("120") int generalPerClientPerMinute,
+        @DefaultValue("600") int generalGlobalPerMinute
     ) {
     }
 }

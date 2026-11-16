@@ -1,5 +1,6 @@
 package com.tavares.recommender.controller;
 
+import com.tavares.recommender.checkin.Emotion;
 import com.tavares.recommender.dtos.MoodRequest;
 import com.tavares.recommender.dtos.MoodResponse;
 import com.tavares.recommender.dtos.MusicRecommendationRequest;
@@ -45,6 +46,6 @@ public class ApiController {
     @PostMapping(value = "/recommend", consumes = "application/json", produces = "application/json")
     public MusicRecommendationResponse recommend(@Valid @RequestBody MusicRecommendationRequest request) {
         MusicType type = MusicType.getMediaType(request.getMediaType());
-        return new MusicRecommendationResponse(musicService.recommend(request.getEmotion(), type));
+        return new MusicRecommendationResponse(musicService.recommend(Emotion.parseAll(request.getEmotions()), type));
     }
 }

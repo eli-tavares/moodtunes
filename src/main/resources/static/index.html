@@ -46,41 +46,111 @@
         <header class="top">
             <div>
                 <h1>🎶 MoodTunes</h1>
-                <p class="tagline">Tell me how you feel, pick the emotion that fits, and get song or album
-                    recommendations tailored to your vibe.</p>
+                <p class="tagline">Tell me how you feel, save a check-in, and get music that fits.</p>
             </div>
             <button id="lockBtn" class="btn small" type="button" aria-label="Lock the app">🔒 Lock</button>
         </header>
 
-        <section class="card" aria-labelledby="moodLabel">
-            <label id="moodLabel" for="moodText">How are you feeling?</label>
-            <textarea id="moodText" rows="4" maxlength="500" autocomplete="off"
-                      placeholder="A few sentences about your mood…"></textarea>
-            <button id="analyzeBtn" class="btn primary" type="button">Analyze</button>
-        </section>
+        <div class="tabs" role="tablist" aria-label="Sections">
+            <button id="tabCheckin" class="tab" role="tab" type="button" aria-selected="true"
+                    aria-controls="viewCheckin">Check in</button>
+            <button id="tabReports" class="tab" role="tab" type="button" aria-selected="false"
+                    aria-controls="viewReports">Reports</button>
+        </div>
 
-        <section id="emotionsCard" class="card" hidden aria-labelledby="emotionsTitle">
-            <h2 id="emotionsTitle">Possible emotions</h2>
-            <div id="emotionsContainer" class="chips" role="group" aria-label="Emotions"></div>
-        </section>
+        <!-- ===== Check in ===== -->
+        <div id="viewCheckin" role="tabpanel" aria-labelledby="tabCheckin">
+            <section class="card" aria-labelledby="moodLabel">
+                <label id="moodLabel" for="moodText">How are you feeling?</label>
+                <textarea id="moodText" rows="4" maxlength="500" autocomplete="off"
+                          placeholder="A few sentences about your mood…"></textarea>
+                <button id="analyzeBtn" class="btn primary" type="button">Analyze</button>
+            </section>
 
-        <section id="mediaCard" class="card" hidden aria-labelledby="mediaQuestion">
-            <h2 id="mediaQuestion"></h2>
-            <div class="row">
-                <button id="songsBtn" class="btn" type="button">Songs</button>
-                <button id="albumsBtn" class="btn" type="button">Albums</button>
+            <section id="emotionsCard" class="card" hidden aria-labelledby="emotionsTitle">
+                <h2 id="emotionsTitle">Which fit?</h2>
+                <p class="hint">Pick up to 3. Your sentence is never saved, only the emotions you choose.</p>
+                <div id="emotionsContainer" class="chips" role="group" aria-label="Emotions"></div>
+                <div class="actions">
+                    <button id="saveBtn" class="btn primary" type="button" disabled>Save check-in</button>
+                </div>
+            </section>
+
+            <section id="mediaCard" class="card" hidden aria-labelledby="mediaQuestion">
+                <h2 id="mediaQuestion"></h2>
+                <div class="row">
+                    <button id="songsBtn" class="btn" type="button">Songs</button>
+                    <button id="albumsBtn" class="btn" type="button">Albums</button>
+                </div>
+            </section>
+
+            <section id="resultsCard" class="card" hidden aria-labelledby="resultsTitle">
+                <h2 id="resultsTitle">Recommendations</h2>
+                <ul id="resultsList" class="results"></ul>
+            </section>
+
+            <p id="status" role="status" aria-live="polite"></p>
+        </div>
+
+        <!-- ===== Reports ===== -->
+        <div id="viewReports" role="tabpanel" aria-labelledby="tabReports" hidden>
+            <div class="range" role="group" aria-label="Report period">
+                <button class="range-btn" type="button" data-range="week" aria-pressed="true">Week</button>
+                <button class="range-btn" type="button" data-range="month" aria-pressed="false">Month</button>
+                <button class="range-btn" type="button" data-range="3months" aria-pressed="false">3 months</button>
             </div>
-        </section>
+            <p id="reportSpan" class="span-text"></p>
 
-        <section id="resultsCard" class="card" hidden aria-labelledby="resultsTitle">
-            <h2 id="resultsTitle">Recommendations</h2>
-            <ul id="resultsList" class="results"></ul>
-        </section>
+            <div id="reportBody">
+                <div class="tiles">
+                    <div class="tile"><p class="tile-label">Check-ins</p><p id="tileCheckins" class="tile-value">–</p>
+                        <p id="tileCheckinsNote" class="tile-delta"></p></div>
+                    <div class="tile"><p class="tile-label">Active days</p><p id="tileDays" class="tile-value">–</p>
+                        <p id="tileDaysNote" class="tile-delta"></p></div>
+                    <div class="tile"><p class="tile-label">Avg. mood</p><p id="tileMood" class="tile-value">–</p>
+                        <p id="tileMoodNote" class="tile-delta"></p><p id="tileMoodPeriod" class="tile-delta"></p></div>
+                </div>
 
-        <p id="status" role="status" aria-live="polite"></p>
+                <section class="card" aria-labelledby="moodTitle">
+                    <div class="card-head"><h2 id="moodTitle">Mood over time</h2>
+                        <button class="link-btn" type="button" data-table-for="mood">Table</button></div>
+                    <p class="subtitle">Average score per check-in, from −2 (low) to +2 (high).</p>
+                    <div id="moodChart"></div><div id="moodTable" hidden></div>
+                </section>
+
+                <section class="card" aria-labelledby="mixTitle">
+                    <div class="card-head"><h2 id="mixTitle">What you felt</h2>
+                        <button class="link-btn" type="button" data-table-for="mix">Table</button></div>
+                    <p class="subtitle">Emotions you picked, by group. Body means tired, hungry and so on.</p>
+                    <div id="mixChart"></div><div id="mixTable" hidden></div>
+                </section>
+
+                <section class="card" aria-labelledby="trackTitle">
+                    <div class="card-head"><h2 id="trackTitle">Track an emotion</h2>
+                        <button class="link-btn" type="button" data-table-for="track">Table</button></div>
+                    <p class="subtitle">Pick up to 3 to see how often each came up.</p>
+                    <div id="trackPicker" class="picker" role="group" aria-label="Emotions to track"></div>
+                    <div id="trackChart"></div><div id="trackTable" hidden></div>
+                </section>
+
+                <section class="card" aria-labelledby="topTitle">
+                    <h2 id="topTitle">Most frequent</h2>
+                    <ul id="topList" class="ranked"></ul>
+                    <p id="topEmpty" class="empty" hidden>No check-ins in this period yet.</p>
+                </section>
+
+                <section class="card" aria-labelledby="historyTitle">
+                    <div class="card-head"><h2 id="historyTitle">Recent check-ins</h2>
+                        <button id="exportBtn" class="link-btn" type="button">Export data</button></div>
+                    <ul id="historyList" class="history"></ul>
+                    <p id="historyEmpty" class="empty" hidden>Nothing saved yet. Save a check-in to start your log.</p>
+                </section>
+            </div>
+            <p id="reportStatus" role="status" aria-live="polite"></p>
+        </div>
     </div>
 </main>
 
-<script src="/app.js"></script>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

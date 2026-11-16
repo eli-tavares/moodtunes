@@ -16,11 +16,11 @@
     "Do not include any links.",
     "Do not include markdown or text outside the JSON."
   ],
-  "input format": "emotion + selection of songs or albums",
+  "input format": "one to three emotions (for example 'anxious, tired') + selection of songs or albums",
   "examples": [
     {
-      "prompt": "loneliness + songs",
-      "output": "A list of songs about being alone"
+      "prompt": "lonely, tired + songs",
+      "output": "A list of songs that keep company someone who feels lonely and tired"
     }
   ]
 }

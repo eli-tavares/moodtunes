@@ -32,6 +32,16 @@ spring:
     client:
       connect-timeout: 5s
       read-timeout: 30s
+  datasource:
+    # Local default: a file database under ./data (git-ignored), so history survives restarts while you test.
+    # Production: set SPRING_DATASOURCE_URL / SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD to a
+    # PostgreSQL database (see README). A container's own disk is wiped on every redeploy.
+    url: jdbc:h2:file:./data/moodtunes;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password: ""
+    hikari:
+      maximum-pool-size: 3     # one user; also stays well inside free-tier connection limits
+      minimum-idle: 0          # let a suspending serverless database go quiet
   cache:
     type: caffeine
     cache-names: musicRecommendations
@@ -72,3 +82,6 @@ app:
   rate-limit:
     per-client-per-minute: 20
     global-per-minute: 120
+    auth-failures-per-minute: 10
+    general-per-client-per-minute: 120
+    general-global-per-minute: 600

@@ -2,11 +2,14 @@ package com.tavares.recommender.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.tavares.recommender.checkin.Emotion;
 import com.tavares.recommender.config.ChatClientAdapter;
 import com.tavares.recommender.dtos.MusicRecommendation;
 import java.util.List;
@@ -42,11 +45,11 @@ class MusicServiceIntegrationTest {
     }
 
     @Test
-    void parsedResultIsCachedCaseInsensitively() {
+    void parsedResultIsCachedPerEmotionSelection() {
         when(chatAdapter.call(anyString(), anyString())).thenReturn(JSON);
 
-        List<MusicRecommendation> first = musicService.recommend("loneliness", MusicType.SONGS);
-        List<MusicRecommendation> second = musicService.recommend("  Loneliness ", MusicType.SONGS);
+        List<MusicRecommendation> first = musicService.recommend(List.of(Emotion.LONELY), MusicType.SONGS);
+        List<MusicRecommendation> second = musicService.recommend(List.of(Emotion.LONELY), MusicType.SONGS);
 
         assertEquals("Lonely Song", first.getFirst().getTitle());
         assertEquals(first, second);
@@ -54,19 +57,26 @@ class MusicServiceIntegrationTest {
     }
 
     @Test
-    void differentMediaTypesAreCachedSeparately() {
+    void severalEmotionsGoIntoThePrompt() {
+        when(chatAdapter.call(anyString(), contains("Emotions: anxious, tired"))).thenReturn(JSON);
+        assertEquals(1, musicService.recommend(List.of(Emotion.ANXIOUS, Emotion.TIRED), MusicType.SONGS).size());
+    }
+
+    @Test
+    void differentSelectionsOrMediaTypesAreCachedSeparately() {
         when(chatAdapter.call(anyString(), anyString())).thenReturn(JSON);
-        musicService.recommend("joy", MusicType.SONGS);
-        musicService.recommend("joy", MusicType.ALBUMS);
-        verify(chatAdapter, times(2)).call(anyString(), anyString());
+        musicService.recommend(List.of(Emotion.HAPPY), MusicType.SONGS);
+        musicService.recommend(List.of(Emotion.HAPPY), MusicType.ALBUMS);
+        musicService.recommend(List.of(Emotion.HAPPY, Emotion.TIRED), MusicType.SONGS);
+        verify(chatAdapter, times(3)).call(anyString(), anyString());
     }
 
     @Test
     void unreadableAnswerIsNotCachedSoNextCallRetries() {
         when(chatAdapter.call(anyString(), anyString())).thenReturn("Sorry, I can't help with that.", JSON);
 
-        assertThrows(AiResponseException.class, () -> musicService.recommend("joy", MusicType.SONGS));
-        assertEquals(1, musicService.recommend("joy", MusicType.SONGS).size());
+        assertThrows(AiResponseException.class, () -> musicService.recommend(List.of(Emotion.HAPPY), MusicType.SONGS));
+        assertEquals(1, musicService.recommend(List.of(Emotion.HAPPY), MusicType.SONGS).size());
         verify(chatAdapter, times(2)).call(anyString(), anyString());
     }
 
@@ -81,5 +91,6 @@ class MusicServiceIntegrationTest {
         assertThrows(AiResponseException.class, () -> musicService.parse("[]"));
         assertThrows(AiResponseException.class, () -> musicService.parse("[{\"artist\":\"x\"}]"));
         assertThrows(AiResponseException.class, () -> musicService.parse("[{broken"));
+        assertTrue(true);
     }
 }

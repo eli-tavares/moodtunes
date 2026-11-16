@@ -1,11 +1,12 @@
 'use strict';
 
 // Bump CACHE_VERSION whenever the app shell changes so old caches are dropped.
-const CACHE_VERSION = 'moodtunes-v2';
+const CACHE_VERSION = 'moodtunes-v3';
 const SHELL = [
     '/',
     '/styles.css',
     '/app.js',
+    '/charts.js',
     '/manifest.webmanifest',
     '/favicon/apple-touch-icon.png',
     '/favicon/android-chrome-192x192.png',

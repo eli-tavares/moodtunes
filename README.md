@@ -14,7 +14,8 @@ Whether you’re feeling on top of the world or a bit lost in your thoughts, the
 
 # 🎵 MoodTunes
 
-A **Spring Boot** app that uses **Spring AI (OpenAI)** to recommend songs or albums based on how you feel. It ships a
+A **Spring Boot** app that uses **Spring AI (OpenAI or Claude)** to turn how you feel into emotions, recommend songs or
+albums for them, and keep a private mood log with week / month / 3-month reports. It ships a
 small mobile-first web UI that is also an installable **PWA**, so it can live on your iPhone home screen.
 
 ---
@@ -107,9 +108,10 @@ Railway builds the `Dockerfile` straight from GitHub and redeploys on every push
    | `ANTHROPIC_API_KEY` | your Anthropic API key |
    | `APP_ACCESS_TOKEN` | a long random code, e.g. `openssl rand -base64 24` |
 
-3. **Settings -> Networking -> Generate Domain** to get your public `https://...up.railway.app` URL.
-4. **Settings -> Deploy -> Healthcheck Path:** `/actuator/health`.
-5. In Railway's billing settings set a **usage limit**, and in the Anthropic Console set a monthly spend limit.
+3. **Add a database** (see "Database" below), otherwise your mood history is lost on every redeploy.
+4. **Settings -> Networking -> Generate Domain** to get your public `https://...up.railway.app` URL.
+5. **Settings -> Deploy -> Healthcheck Path:** `/actuator/health`.
+6. In Railway's billing settings set a **usage limit**, and in the Anthropic Console set a monthly spend limit.
 
 Railway injects `PORT`, which the app already honours. Expect roughly 300 MB of memory in use. Behind Railway's proxy
 all traffic may share one rate-limit bucket, which is fine for a single user; `APP_ACCESS_TOKEN` is your real protection.
@@ -145,17 +147,70 @@ The lock screen is a convenience on top of the real protection: the server rejec
 
 ---
 
+## 📈 Mood log and reports
+
+After **Analyze**, pick up to 3 emotions that fit and tap **Save check-in**. Only the emotions are stored, never the
+sentence you typed. Music for the same selection is one tap away.
+
+The **Reports** tab covers the **last 7 days**, the **last 30 days** or the **last 13 weeks** ("3 months"), each compared
+with the period just before it:
+
+- **Summary:** check-ins, active days, and average mood with the change (▲/▼) against the previous period.
+- **Mood over time:** a line from -2 (low) to +2 (high). Days without a check-in are gaps, never a zero.
+- **What you felt:** emotions per day (or week) stacked by group: positive, negative, neutral and body.
+- **Track an emotion:** follow up to 3 emotions (say anxious, happy, hungry) and see how often each came up.
+- **Most frequent**, **recent check-ins** (with delete) and an **Export data** button that downloads everything as JSON.
+
+Every chart has a **Table** view with the same numbers, tooltips work by hover, touch and keyboard (arrow keys), and
+the colours are checked for colour-blind safety in light and dark mode.
+
+**The emotion list is fixed** (34 words in 4 groups, see `Emotion.java`). The AI may only choose from it, so
+"calm" and "calmness" can never become two lines on a graph. Each emotion has a mood score from -2 to +2; body states
+(tired, hungry, sleepy, restless, sore, unwell) are tracked but do not move the mood line.
+
+---
+
+## 🗄️ Database
+
+Check-ins are kept in a SQL database through Flyway migrations (`src/main/resources/db/migration`).
+
+- **Local:** nothing to set up. A file database is created under `./data` (git-ignored) so history survives restarts.
+- **Production:** set the standard Spring variables to a PostgreSQL database. The app logs which database it uses at
+  startup and warns if it is still on the local file one.
+
+  | Variable | Value |
+  |----------|-------|
+  | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://HOST:PORT/DATABASE` |
+  | `SPRING_DATASOURCE_USERNAME` | database user |
+  | `SPRING_DATASOURCE_PASSWORD` | database password |
+
+  **Railway Postgres:** in the project choose **New -> Database -> PostgreSQL**, then on the app service use
+  [variable references](https://docs.railway.com/variables) to the database service, for example
+  `jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}` (check the service name
+  matches yours). **Neon** (free) works the same way: use its host and database with `?sslmode=require`, plus its user
+  and password.
+- **Backups:** use **Export data** in the Reports tab now and then. Free databases have limited recovery options.
+
+---
+
 ## 🔌 API
 
 Stateless JSON API (errors are [RFC 7807](https://datatracker.ietf.org/doc/html/rfc7807) `application/problem+json`):
 
-- `POST /api/analyze` - `{ "moodText": "..." }` (max 500 chars) -> `{ "emotions": ["joy", ...] }`
-- `POST /api/recommend` - `{ "emotion": "joy", "mediaType": "SONGS|ALBUMS" }` ->
+- `POST /api/analyze` - `{ "moodText": "..." }` (max 500 chars) -> `{ "emotions": ["tired", "anxious", ...] }`
+  (always words from the fixed emotion list)
+- `POST /api/recommend` - `{ "emotions": ["anxious", "tired"], "mediaType": "SONGS|ALBUMS" }` (1-3 emotions) ->
   `{ "items": [{ "title": "...", "artist": "...", "description": "..." }] }`
+- `POST /api/checkins` - `{ "emotions": ["anxious", "tired"] }` -> `201` with `{ id, createdAt, emotions }`
+- `GET /api/checkins?limit=20` - newest first; `DELETE /api/checkins/{id}` -> `204` (or `404`)
+- `GET /api/reports?range=week|month|3months&tz=Europe/Dublin` - summary, per-day (or per-week) buckets and emotion
+  counts; `tz` is your IANA time zone so days match your day
+- `GET /api/export` - all check-ins as a JSON download
 - `GET /api/auth/check` - `204` if the access code is accepted (or none is required), `401` otherwise; makes no AI call
 - `GET /actuator/health` - liveness/readiness for hosting platforms
 
-Status codes: `400` invalid input, `401` missing/wrong access token, `413` body too large, `429` rate limited,
+Status codes: `400` invalid input, `401` missing/wrong access token, `413` body too large, `429` rate limited
+(AI calls have a tight budget because they cost money; saving and reading mood data have a generous one),
 `502` the AI failed or answered with something unusable (never cached, so a retry works).
 
 ---
@@ -177,17 +232,20 @@ Status codes: `400` invalid input, `401` missing/wrong access token, `413` body 
 mvn test
 ```
 
-Covers the API contract and validation, auth/rate limiting, error handling, AI-output parsing/sanitising and caching.
-No OpenAI key is needed - the AI client is mocked.
+Covers the API contract and validation, auth/rate limiting, error handling, AI-output parsing and caching, the emotion
+vocabulary, the database layer (real SQL and the Flyway migration against an in-memory database) and the report maths
+(week / month / 3-month windows, time zones, gaps). No AI key is needed - the AI client is mocked.
 
 ---
 
 ## 🧠 How it works
 
-1. The UI sends your mood text to `/api/analyze`; `MoodAnalysisService` asks the model for a handful of emotions.
-2. You pick an emotion and songs/albums; the UI calls `/api/recommend`.
-3. `MusicService` asks the model for a JSON list, parses and validates it, and caches the parsed result
-   (Caffeine, key `emotion_mediaType`, 12 h, max 500 entries).
+1. The UI sends your mood text to `/api/analyze`; `MoodAnalysisService` asks the model to choose from the fixed
+   emotion list and discards anything else.
+2. You pick up to 3 emotions. **Save check-in** stores just those emotions (`/api/checkins`).
+3. Songs or albums for the selection come from `/api/recommend`: `MusicService` asks the model for a JSON list, parses
+   and validates it, and caches the parsed result (Caffeine, key = emotions + media type, 12 h, max 500 entries).
+4. `ReportService` turns the saved check-ins into the weekly, monthly and 3-month reports.
 
 ---
 
